@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using UnityEngine;
 
 public static class RoadPathfinderV2
 {
@@ -6,6 +7,14 @@ public static class RoadPathfinderV2
     {
         public RoadNodeV2 previousNode;
         public RoadSegmentV2 viaSegment;
+    }
+
+    private class LegInfo
+    {
+        public RoadNodeV2 fromNode;
+        public RoadNodeV2 toNode;
+        public RoadSegmentV2 segment;
+        public List<RoadLaneDataV2> candidates = new List<RoadLaneDataV2>();
     }
 
     public static bool TryFindPath(
@@ -22,8 +31,23 @@ public static class RoadPathfinderV2
         if (startNode == targetNode)
             return false;
 
+        if (!TryBuildNodePath(network, startNode, targetNode, out List<RoadNodeV2> nodePath, out Dictionary<RoadNodeV2, NodeStep> cameFrom))
+            return false;
+
+        return TryBuildLanePathFromNodePath(nodePath, cameFrom, out lanePath);
+    }
+
+    private static bool TryBuildNodePath(
+        RoadNetworkV2 network,
+        RoadNodeV2 startNode,
+        RoadNodeV2 targetNode,
+        out List<RoadNodeV2> nodePath,
+        out Dictionary<RoadNodeV2, NodeStep> cameFrom)
+    {
+        nodePath = null;
+        cameFrom = new Dictionary<RoadNodeV2, NodeStep>();
+
         Queue<RoadNodeV2> queue = new Queue<RoadNodeV2>();
-        Dictionary<RoadNodeV2, NodeStep> cameFrom = new Dictionary<RoadNodeV2, NodeStep>();
         HashSet<RoadNodeV2> visited = new HashSet<RoadNodeV2>();
 
         queue.Enqueue(startNode);
@@ -80,36 +104,31 @@ public static class RoadPathfinderV2
         if (!found)
             return false;
 
-        return TryBuildLanePathFromNodePath(startNode, targetNode, cameFrom, out lanePath);
-    }
-
-    private static bool TryBuildLanePathFromNodePath(
-        RoadNodeV2 startNode,
-        RoadNodeV2 targetNode,
-        Dictionary<RoadNodeV2, NodeStep> cameFrom,
-        out List<RoadLaneDataV2> lanePath)
-    {
-        lanePath = new List<RoadLaneDataV2>();
-
-        List<RoadNodeV2> nodePath = new List<RoadNodeV2>();
+        nodePath = new List<RoadNodeV2>();
         RoadNodeV2 current = targetNode;
         nodePath.Add(current);
 
         while (current != startNode)
         {
             if (!cameFrom.TryGetValue(current, out NodeStep step))
-            {
-                lanePath = null;
                 return false;
-            }
 
             current = step.previousNode;
             nodePath.Add(current);
         }
 
         nodePath.Reverse();
+        return nodePath.Count >= 2;
+    }
 
-        RoadLaneDataV2 previousLane = null;
+    private static bool TryBuildLanePathFromNodePath(
+        List<RoadNodeV2> nodePath,
+        Dictionary<RoadNodeV2, NodeStep> cameFrom,
+        out List<RoadLaneDataV2> lanePath)
+    {
+        lanePath = null;
+
+        List<LegInfo> legs = new List<LegInfo>();
 
         for (int i = 0; i < nodePath.Count - 1; i++)
         {
@@ -117,84 +136,225 @@ public static class RoadPathfinderV2
             RoadNodeV2 toNode = nodePath[i + 1];
 
             if (!cameFrom.TryGetValue(toNode, out NodeStep step))
-            {
-                lanePath = null;
                 return false;
-            }
 
-            RoadSegmentV2 segment = step.viaSegment;
-            if (segment == null)
-            {
-                lanePath = null;
+            if (step.viaSegment == null)
                 return false;
-            }
 
-            List<RoadLaneDataV2> candidates = segment.GetDrivingLanes(fromNode, toNode);
+            List<RoadLaneDataV2> candidates = step.viaSegment.GetDrivingLanes(fromNode, toNode);
             if (candidates == null || candidates.Count == 0)
-            {
-                lanePath = null;
                 return false;
-            }
 
-            RoadLaneDataV2 chosenLane = ChooseBestLane(previousLane, candidates);
-            if (chosenLane == null)
+            legs.Add(new LegInfo
             {
-                lanePath = null;
-                return false;
-            }
-
-            lanePath.Add(chosenLane);
-            previousLane = chosenLane;
+                fromNode = fromNode,
+                toNode = toNode,
+                segment = step.viaSegment,
+                candidates = candidates
+            });
         }
 
-        return lanePath.Count > 0;
-    }
+        if (legs.Count == 0)
+            return false;
 
-    private static RoadLaneDataV2 ChooseBestLane(RoadLaneDataV2 previousLane, List<RoadLaneDataV2> candidates)
-    {
-        if (candidates == null || candidates.Count == 0)
-            return null;
+        Dictionary<RoadLaneDataV2, float>[] costToEnd = new Dictionary<RoadLaneDataV2, float>[legs.Count];
+        Dictionary<RoadLaneDataV2, RoadLaneDataV2>[] nextChoice = new Dictionary<RoadLaneDataV2, RoadLaneDataV2>[legs.Count];
 
-        if (previousLane == null)
-            return candidates[0];
-
-        RoadLaneDataV2 bestLane = null;
-        float bestScore = float.MaxValue;
-
-        for (int i = 0; i < candidates.Count; i++)
+        for (int i = 0; i < legs.Count; i++)
         {
-            RoadLaneDataV2 candidate = candidates[i];
-            if (candidate == null)
+            costToEnd[i] = new Dictionary<RoadLaneDataV2, float>();
+            nextChoice[i] = new Dictionary<RoadLaneDataV2, RoadLaneDataV2>();
+        }
+
+        int lastIndex = legs.Count - 1;
+
+        for (int i = 0; i < legs[lastIndex].candidates.Count; i++)
+        {
+            RoadLaneDataV2 lane = legs[lastIndex].candidates[i];
+            if (lane == null)
                 continue;
 
-            float score = 0f;
+            costToEnd[lastIndex][lane] = GetLanePreferenceCost(lane, null);
+            nextChoice[lastIndex][lane] = null;
+        }
 
-            // Предпочитаем реальное connection
-            bool hasRealConnection = false;
-            foreach (RoadLaneConnectionV2 connection in previousLane.outgoingConnections)
+        for (int legIndex = legs.Count - 2; legIndex >= 0; legIndex--)
+        {
+            LegInfo currentLeg = legs[legIndex];
+            LegInfo nextLeg = legs[legIndex + 1];
+
+            for (int i = 0; i < currentLeg.candidates.Count; i++)
             {
-                if (connection == null || !connection.IsValid)
+                RoadLaneDataV2 currentLane = currentLeg.candidates[i];
+                if (currentLane == null)
                     continue;
 
-                if (connection.toLane == candidate)
+                float bestCost = float.MaxValue;
+                RoadLaneDataV2 bestNextLane = null;
+
+                for (int j = 0; j < nextLeg.candidates.Count; j++)
                 {
-                    hasRealConnection = true;
-                    break;
+                    RoadLaneDataV2 candidateNextLane = nextLeg.candidates[j];
+                    if (candidateNextLane == null)
+                        continue;
+
+                    if (!costToEnd[legIndex + 1].TryGetValue(candidateNextLane, out float futureCost))
+                        continue;
+
+                    float transitionCost = GetTransitionCost(currentLane, candidateNextLane);
+                    if (transitionCost >= 10000f)
+                        continue;
+
+                    float totalCost =
+                        GetLanePreferenceCost(currentLane, nextLeg.segment) +
+                        transitionCost +
+                        futureCost;
+
+                    if (totalCost < bestCost)
+                    {
+                        bestCost = totalCost;
+                        bestNextLane = candidateNextLane;
+                    }
                 }
-            }
 
-            score += hasRealConnection ? 0f : 100f;
-
-            // Предпочитаем близкий индекс полосы
-            score += UnityEngine.Mathf.Abs(candidate.localLaneIndex - previousLane.localLaneIndex);
-
-            if (score < bestScore)
-            {
-                bestScore = score;
-                bestLane = candidate;
+                if (bestNextLane != null)
+                {
+                    costToEnd[legIndex][currentLane] = bestCost;
+                    nextChoice[legIndex][currentLane] = bestNextLane;
+                }
             }
         }
 
-        return bestLane;
+        RoadLaneDataV2 firstLane = null;
+        float bestFirstCost = float.MaxValue;
+
+        foreach (KeyValuePair<RoadLaneDataV2, float> kv in costToEnd[0])
+        {
+            if (kv.Value < bestFirstCost)
+            {
+                bestFirstCost = kv.Value;
+                firstLane = kv.Key;
+            }
+        }
+
+        if (firstLane == null)
+            return false;
+
+        lanePath = new List<RoadLaneDataV2> { firstLane };
+
+        RoadLaneDataV2 currentChosenLane = firstLane;
+
+        for (int legIndex = 0; legIndex < legs.Count - 1; legIndex++)
+        {
+            if (!nextChoice[legIndex].TryGetValue(currentChosenLane, out RoadLaneDataV2 nextLane))
+                return false;
+
+            if (nextLane == null)
+                return false;
+
+            lanePath.Add(nextLane);
+            currentChosenLane = nextLane;
+        }
+
+        return lanePath.Count == legs.Count;
+    }
+
+    private static float GetTransitionCost(RoadLaneDataV2 currentLane, RoadLaneDataV2 nextLane)
+    {
+        if (currentLane == null || nextLane == null)
+            return 10000f;
+
+        bool hasRealConnection = false;
+        RoadLaneConnectionV2.MovementType movementType = RoadLaneConnectionV2.MovementType.Straight;
+
+        for (int i = 0; i < currentLane.outgoingConnections.Count; i++)
+        {
+            RoadLaneConnectionV2 connection = currentLane.outgoingConnections[i];
+
+            if (connection == null || !connection.IsValid)
+                continue;
+
+            if (connection.toLane == nextLane)
+            {
+                hasRealConnection = true;
+                movementType = connection.movementType;
+                break;
+            }
+        }
+
+        float cost = 0f;
+
+        if (!hasRealConnection)
+            cost += 10000f;
+
+        cost += Mathf.Abs(currentLane.localLaneIndex - nextLane.localLaneIndex) * 2f;
+
+        switch (movementType)
+        {
+            case RoadLaneConnectionV2.MovementType.Left:
+                cost += 3f;
+                break;
+
+            case RoadLaneConnectionV2.MovementType.Right:
+                cost += 1f;
+                break;
+
+            case RoadLaneConnectionV2.MovementType.Straight:
+                cost += 0f;
+                break;
+        }
+
+        return cost;
+    }
+
+    private static float GetLanePreferenceCost(RoadLaneDataV2 lane, RoadSegmentV2 nextSegment)
+    {
+        if (lane == null)
+            return 1000f;
+
+        float cost = 0f;
+
+        if (nextSegment == null)
+            return cost;
+
+        bool hasLeft = false;
+        bool hasStraight = false;
+        bool hasRight = false;
+
+        for (int i = 0; i < lane.outgoingConnections.Count; i++)
+        {
+            RoadLaneConnectionV2 connection = lane.outgoingConnections[i];
+            if (connection == null || !connection.IsValid)
+                continue;
+
+            if (connection.toLane == null || connection.toLane.ownerSegment != nextSegment)
+                continue;
+
+            switch (connection.movementType)
+            {
+                case RoadLaneConnectionV2.MovementType.Left:
+                    hasLeft = true;
+                    break;
+
+                case RoadLaneConnectionV2.MovementType.Straight:
+                    hasStraight = true;
+                    break;
+
+                case RoadLaneConnectionV2.MovementType.Right:
+                    hasRight = true;
+                    break;
+            }
+        }
+
+        if (hasLeft)
+            cost += lane.localLaneIndex * 0.5f;
+
+        if (hasRight)
+            cost += (10f - lane.localLaneIndex) * 0.1f;
+
+        if (hasStraight)
+            cost += Mathf.Abs(lane.localLaneIndex - 0.5f);
+
+        return cost;
     }
 }
