@@ -73,13 +73,12 @@ public class RoadVehicleAgentV2 : MonoBehaviour
             return;
         }
 
-        int targetIndex = GetActiveTargetIndex();
-        Vector3 target = waypoints[targetIndex];
+        Vector3 target = waypoints[currentWaypointIndex];
         Vector3 currentPosition = transform.position;
 
         Vector3 direction = target - currentPosition;
         if (direction.sqrMagnitude > 0.0001f)
-            RotateTowards(GetLookAheadDirection(targetIndex));
+            RotateTowards(GetLookAheadDirection(currentWaypointIndex));
 
         float maxMove = speed * Time.deltaTime;
         maxMove = Mathf.Min(maxMove, GetAllowedMoveDistance(currentPosition, direction.normalized, maxMove));
@@ -92,7 +91,7 @@ public class RoadVehicleAgentV2 : MonoBehaviour
 
         if (Vector3.Distance(transform.position, target) < 0.01f)
         {
-            if (targetIndex != currentWaypointIndex)
+            if (IsGateBlocked(currentWaypointIndex))
                 return;
 
             currentWaypointIndex++;
