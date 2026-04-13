@@ -137,39 +137,34 @@ public class RoadVehicleAgentV2 : MonoBehaviour
     private void BuildWaypointPath(List<RoadLaneDataV2> lanePath)
     {
         AddPointIfFar(lanePath[0].start);
-        AddPointIfFar(lanePath[0].end);
 
-        for (int i = 1; i < lanePath.Count; i++)
+        for (int i = 0; i < lanePath.Count; i++)
         {
-            RoadLaneDataV2 previousLane = lanePath[i - 1];
             RoadLaneDataV2 currentLane = lanePath[i];
+            bool hasNext = i < lanePath.Count - 1;
 
-            RoadLaneConnectionV2 connection = FindConnection(previousLane, currentLane);
+            if (!hasNext)
+            {
+                AddPointIfFar(currentLane.end);
+                continue;
+            }
+
+            RoadLaneDataV2 nextLane = lanePath[i + 1];
+            RoadLaneConnectionV2 connection = FindConnection(currentLane, nextLane);
 
             int gateIndex = waypoints.Count;
 
-            if (connection != null && connection.curvePoints != null && connection.curvePoints.Count > 0)
-            {
-                GateInfo gate = BuildGateFromRealConnection(connection);
-                if (gate != null)
-                    gatedWaypointIndices[gateIndex] = gate;
+            GateInfo gate = connection != null
+                ? BuildGateFromRealConnection(connection)
+                : BuildGateFromSyntheticTurn(currentLane, nextLane);
 
-                for (int j = 1; j < connection.curvePoints.Count; j++)
-                    AddPointIfFar(connection.curvePoints[j]);
-            }
-            else
-            {
-                List<Vector3> syntheticCurve = BuildSyntheticTurn(previousLane, currentLane);
-                GateInfo gate = BuildGateFromSyntheticTurn(previousLane, currentLane);
+            if (gate != null)
+                gatedWaypointIndices[gateIndex] = gate;
 
-                if (gate != null)
-                    gatedWaypointIndices[gateIndex] = gate;
+            List<Vector3> turnPoints = BuildNodeAnchoredTurn(currentLane, nextLane);
 
-                for (int j = 1; j < syntheticCurve.Count; j++)
-                    AddPointIfFar(syntheticCurve[j]);
-            }
-
-            AddPointIfFar(currentLane.end);
+            for (int j = 0; j < turnPoints.Count; j++)
+                AddPointIfFar(turnPoints[j]);
         }
     }
 
@@ -235,13 +230,26 @@ public class RoadVehicleAgentV2 : MonoBehaviour
 
     private List<Vector3> BuildSyntheticTurn(RoadLaneDataV2 fromLane, RoadLaneDataV2 toLane)
     {
+        return BuildNodeAnchoredTurn(fromLane, toLane);
+    }
+
+    private List<Vector3> BuildNodeAnchoredTurn(RoadLaneDataV2 fromLane, RoadLaneDataV2 toLane)
+    {
         List<Vector3> points = new List<Vector3>();
 
         if (fromLane == null || toLane == null)
             return points;
 
-        Vector3 p0 = fromLane.end;
-        Vector3 p2 = toLane.start;
+        RoadNodeV2 node = fromLane.toNode;
+        if (node == null || node != toLane.fromNode)
+            return points;
+
+        GetNodeHalfExtents(node, out float halfX, out float halfY);
+
+        const float margin = 0.02f;
+
+        Vector3 fromAnchor = GetExitAnchor(node.transform.position, fromLane, halfX, halfY, margin);
+        Vector3 toAnchor = GetEntryAnchor(node.transform.position, toLane, halfX, halfY, margin);
 
         Vector3 inDir = fromLane.DirectionVector.normalized;
         Vector3 outDir = toLane.DirectionVector.normalized;
@@ -249,26 +257,93 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         float signedAngle = Vector3.SignedAngle(inDir, outDir, Vector3.forward);
         float absAngle = Mathf.Abs(signedAngle);
 
-        if (absAngle < 20f || Vector3.Distance(p0, p2) < 0.15f)
+        points.Add(fromAnchor);
+
+        if (absAngle < 20f || Vector3.Distance(fromAnchor, toAnchor) < 0.15f)
         {
-            points.Add(p0);
-            AddPointIfFar(points, Vector3.Lerp(p0, p2, 0.5f));
-            AddPointIfFar(points, p2);
+            AddPointIfFar(points, Vector3.Lerp(fromAnchor, toAnchor, 0.5f));
+            AddPointIfFar(points, toAnchor);
             return points;
         }
 
-        if (TryGetAxisAlignedTurnCorner(p0, inDir, p2, outDir, out Vector3 corner))
+        if (TryGetAxisAlignedTurnCorner(fromAnchor, inDir, toAnchor, outDir, out Vector3 corner))
         {
-            points.Add(p0);
             AddPointIfFar(points, corner);
-            AddPointIfFar(points, p2);
+            AddPointIfFar(points, toAnchor);
             return points;
         }
 
-        points.Add(p0);
-        AddPointIfFar(points, Vector3.Lerp(p0, p2, 0.5f));
-        AddPointIfFar(points, p2);
+        AddPointIfFar(points, Vector3.Lerp(fromAnchor, toAnchor, 0.5f));
+        AddPointIfFar(points, toAnchor);
         return points;
+    }
+
+    private void GetNodeHalfExtents(RoadNodeV2 node, out float halfX, out float halfY)
+    {
+        halfX = 0.3f;
+        halfY = 0.3f;
+
+        if (node == null)
+            return;
+
+        for (int i = 0; i < node.ConnectedSegments.Count; i++)
+        {
+            RoadSegmentV2 segment = node.ConnectedSegments[i];
+            if (segment == null || segment.StartNode == null || segment.EndNode == null)
+                continue;
+
+            Vector3 dir = (segment.EndNode.transform.position - segment.StartNode.transform.position).normalized;
+            bool isHorizontal = Mathf.Abs(dir.x) >= Mathf.Abs(dir.y);
+
+            if (isHorizontal)
+                halfY = Mathf.Max(halfY, segment.TotalRoadWidth * 0.5f);
+            else
+                halfX = Mathf.Max(halfX, segment.TotalRoadWidth * 0.5f);
+        }
+    }
+
+    private Vector3 GetExitAnchor(Vector3 nodeCenter, RoadLaneDataV2 lane, float halfX, float halfY, float margin)
+    {
+        Vector3 dir = lane.DirectionVector.normalized;
+
+        if (Mathf.Abs(dir.x) >= Mathf.Abs(dir.y))
+        {
+            float x = dir.x > 0f
+                ? nodeCenter.x - halfX - margin
+                : nodeCenter.x + halfX + margin;
+
+            return new Vector3(x, lane.end.y, 0f);
+        }
+        else
+        {
+            float y = dir.y > 0f
+                ? nodeCenter.y - halfY - margin
+                : nodeCenter.y + halfY + margin;
+
+            return new Vector3(lane.end.x, y, 0f);
+        }
+    }
+
+    private Vector3 GetEntryAnchor(Vector3 nodeCenter, RoadLaneDataV2 lane, float halfX, float halfY, float margin)
+    {
+        Vector3 dir = lane.DirectionVector.normalized;
+
+        if (Mathf.Abs(dir.x) >= Mathf.Abs(dir.y))
+        {
+            float x = dir.x > 0f
+                ? nodeCenter.x + halfX + margin
+                : nodeCenter.x - halfX - margin;
+
+            return new Vector3(x, lane.start.y, 0f);
+        }
+        else
+        {
+            float y = dir.y > 0f
+                ? nodeCenter.y + halfY + margin
+                : nodeCenter.y - halfY - margin;
+
+            return new Vector3(lane.start.x, y, 0f);
+        }
     }
 
     private bool TryGetAxisAlignedTurnCorner(
