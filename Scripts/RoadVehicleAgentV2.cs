@@ -406,45 +406,9 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         return dot1 > 0.9f && dot2 > 0.9f;
     }
 
-    private bool TryGetTurnCorner(Vector3 fromPoint, Vector3 fromDir, Vector3 toPoint, Vector3 toDir, out Vector3 corner)
-    {
-        corner = Vector3.zero;
+  
 
-        Vector2 p = new Vector2(fromPoint.x, fromPoint.y);
-        Vector2 r = new Vector2(fromDir.x, fromDir.y);
-
-        Vector2 q = new Vector2(toPoint.x, toPoint.y);
-        Vector2 s = new Vector2(-toDir.x, -toDir.y);
-
-        float rxs = r.x * s.y - r.y * s.x;
-        if (Mathf.Abs(rxs) < 0.0001f)
-            return false;
-
-        Vector2 qp = q - p;
-        float t = (qp.x * s.y - qp.y * s.x) / rxs;
-        float u = (qp.x * r.y - qp.y * r.x) / rxs;
-
-        if (t < 0f || u < 0f)
-            return false;
-
-        Vector2 result = p + r * t;
-        corner = new Vector3(result.x, result.y, 0f);
-        return true;
-    }
-
-    private Vector3 EvaluateQuadraticBezier(Vector3 p0, Vector3 p1, Vector3 p2, float t)
-    {
-        float u = 1f - t;
-        return u * u * p0 + 2f * u * t * p1 + t * t * p2;
-    }
-
-    private int GetActiveTargetIndex()
-    {
-        if (IsGateBlocked(currentWaypointIndex))
-            return Mathf.Max(0, currentWaypointIndex - 1);
-
-        return currentWaypointIndex;
-    }
+    
 
     private bool IsGateBlocked(int waypointIndex)
     {
