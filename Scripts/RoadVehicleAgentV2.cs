@@ -135,65 +135,33 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         return allowed;
     }
 
-    private void BuildWaypointPath(List<RoadLaneDataV2> lanePath)
+    public void Initialize(List<RoadLaneDataV2> lanePath, RoadLaneDataV2 initialLane = null)
     {
         if (lanePath == null || lanePath.Count == 0)
-            return;
-
-        AddPointIfFar(lanePath[0].start);
-
-        RoadLaneDataV2 activeLane = lanePath[0];
-
-        for (int i = 0; i < lanePath.Count; i++)
         {
-            bool hasNext = i < lanePath.Count - 1;
-
-            if (!hasNext)
-            {
-                AddPointIfFar(activeLane.end);
-                continue;
-            }
-
-            RoadLaneDataV2 nextLane = lanePath[i + 1];
-
-            float signedAngle = Vector3.SignedAngle(
-                activeLane.DirectionVector.normalized,
-                nextLane.DirectionVector.normalized,
-                Vector3.forward
-            );
-
-            RoadLaneConnectionV2.MovementType movementType = GetMovementType(signedAngle);
-
-            RoadLaneDataV2 requiredTurnLane = GetRequiredTurnLane(activeLane, movementType);
-
-            if (requiredTurnLane != null && requiredTurnLane != activeLane)
-            {
-                List<Vector3> laneChangePoints = BuildMidSegmentLaneChange(activeLane, requiredTurnLane);
-
-                for (int j = 0; j < laneChangePoints.Count; j++)
-                    AddPointIfFar(laneChangePoints[j]);
-
-                activeLane = requiredTurnLane;
-            }
-
-            RoadLaneConnectionV2 connection = FindConnection(activeLane, nextLane);
-
-            int gateIndex = waypoints.Count;
-
-            GateInfo gate = connection != null
-                ? BuildGateFromRealConnection(connection)
-                : BuildGateFromSyntheticTurn(activeLane, nextLane);
-
-            if (gate != null)
-                gatedWaypointIndices[gateIndex] = gate;
-
-            List<Vector3> turnPoints = BuildNodeAnchoredTurn(activeLane, nextLane);
-
-            for (int j = 0; j < turnPoints.Count; j++)
-                AddPointIfFar(turnPoints[j]);
-
-            activeLane = nextLane;
+            Destroy(gameObject);
+            return;
         }
+
+        RoadLaneDataV2 actualInitialLane = initialLane ?? lanePath[0];
+
+        waypoints.Clear();
+        gatedWaypointIndices.Clear();
+        currentWaypointIndex = 0;
+
+        BuildWaypointPath(actualInitialLane, lanePath);
+
+        if (waypoints.Count < 2)
+        {
+            Destroy(gameObject);
+            return;
+        }
+
+        transform.position = waypoints[0];
+        RotateTowards(waypoints[1] - waypoints[0]);
+
+        currentWaypointIndex = 1;
+        isInitialized = true;
     }
 
     private RoadLaneDataV2 GetRequiredTurnLane(
