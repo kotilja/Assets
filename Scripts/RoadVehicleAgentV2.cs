@@ -383,7 +383,12 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         if (fromLane != null && fromLane.ownerSegment != null)
             offset = fromLane.ownerSegment.StopLineOffset;
 
-        return fromAnchor - inDir.normalized * offset;
+        if (fromLane == null)
+            return fromAnchor - inDir.normalized * offset;
+
+        // ∆дЄм в той же точке, где рисуетс€ стоп-лини€:
+        // lane.end - direction * stopLineOffset
+        return fromLane.end - inDir.normalized * offset;
     }
 
     private void GetNodeHalfExtents(RoadNodeV2 node, out float halfX, out float halfY)
