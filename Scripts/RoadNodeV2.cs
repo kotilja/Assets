@@ -4,8 +4,17 @@ using UnityEngine;
 [ExecuteAlways]
 public class RoadNodeV2 : MonoBehaviour
 {
+    public enum JunctionControlMode
+    {
+        RightHandRule,
+        TrafficLight
+    }
+
     [SerializeField] private int id;
     [SerializeField] private float visualSize = 0.22f;
+
+    [Header("Junction control")]
+    [SerializeField] private JunctionControlMode controlMode = JunctionControlMode.RightHandRule;
 
     [Header("Junction rules")]
     [SerializeField] private bool allowStraight = true;
@@ -24,6 +33,10 @@ public class RoadNodeV2 : MonoBehaviour
     public bool AllowLeft => allowLeft;
     public bool AllowRight => allowRight;
 
+    public JunctionControlMode ControlMode => controlMode;
+    public bool IsIntersection => connectedSegments.Count > 2;
+    public bool UsesTrafficLight => IsIntersection && controlMode == JunctionControlMode.TrafficLight;
+
     public void Initialize(int newId)
     {
         id = newId;
@@ -37,7 +50,10 @@ public class RoadNodeV2 : MonoBehaviour
             return;
 
         if (!connectedSegments.Contains(segment))
+        {
             connectedSegments.Add(segment);
+            EnsureVisual();
+        }
     }
 
     public void UnregisterSegment(RoadSegmentV2 segment)
@@ -45,7 +61,23 @@ public class RoadNodeV2 : MonoBehaviour
         if (segment == null)
             return;
 
-        connectedSegments.Remove(segment);
+        if (connectedSegments.Remove(segment))
+            EnsureVisual();
+    }
+
+    public void SetControlMode(JunctionControlMode mode)
+    {
+        controlMode = mode;
+        EnsureVisual();
+    }
+
+    public void ToggleControlMode()
+    {
+        controlMode = controlMode == JunctionControlMode.RightHandRule
+            ? JunctionControlMode.TrafficLight
+            : JunctionControlMode.RightHandRule;
+
+        EnsureVisual();
     }
 
     public bool AllowsMovement(RoadLaneConnectionV2.MovementType movementType)
@@ -84,25 +116,21 @@ public class RoadNodeV2 : MonoBehaviour
             spriteRenderer = gameObject.AddComponent<SpriteRenderer>();
 
         spriteRenderer.sprite = GetWhiteSprite();
-        spriteRenderer.color = new Color(1f, 0.65f, 0.1f, 0.95f);
+        spriteRenderer.color = GetNodeColor();
         spriteRenderer.sortingOrder = 30;
 
         transform.localScale = new Vector3(visualSize, visualSize, 1f);
     }
 
-    public enum JunctionControlMode
+    private Color GetNodeColor()
     {
-        RightHandRule,
-        TrafficLight
-    }
+        if (!IsIntersection)
+            return new Color(1f, 0.65f, 0.1f, 0.95f);
 
-    [SerializeField] private JunctionControlMode controlMode = JunctionControlMode.RightHandRule;
+        if (controlMode == JunctionControlMode.TrafficLight)
+            return new Color(0.2f, 0.9f, 1f, 0.95f);
 
-    public JunctionControlMode ControlMode => controlMode;
-
-    public void SetControlMode(JunctionControlMode mode)
-    {
-        controlMode = mode;
+        return new Color(1f, 0.65f, 0.1f, 0.95f);
     }
 
     private static Sprite GetWhiteSprite()
