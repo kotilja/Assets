@@ -149,23 +149,121 @@ public class RoadVehicleAgentV2 : MonoBehaviour
             }
 
             RoadLaneDataV2 nextLane = lanePath[i + 1];
+
+            RoadLaneDataV2 transitionLane = currentLane;
             RoadLaneConnectionV2 connection = FindConnection(currentLane, nextLane);
+
+            if (connection == null)
+            {
+                RoadLaneDataV2 preparationLane = FindPreparationLane(currentLane, nextLane);
+
+                if (preparationLane != null && preparationLane != currentLane)
+                {
+                    List<Vector3> laneChangePoints = BuildLaneChangeWithinSegment(currentLane, preparationLane);
+                    for (int j = 0; j < laneChangePoints.Count; j++)
+                        AddPointIfFar(laneChangePoints[j]);
+
+                    transitionLane = preparationLane;
+                    connection = FindConnection(transitionLane, nextLane);
+                }
+            }
 
             int gateIndex = waypoints.Count;
 
             GateInfo gate = connection != null
                 ? BuildGateFromRealConnection(connection)
-                : BuildGateFromSyntheticTurn(currentLane, nextLane);
+                : BuildGateFromSyntheticTurn(transitionLane, nextLane);
 
             if (gate != null)
                 gatedWaypointIndices[gateIndex] = gate;
 
-            List<Vector3> turnPoints = BuildNodeAnchoredTurn(currentLane, nextLane);
+            List<Vector3> turnPoints = BuildNodeAnchoredTurn(transitionLane, nextLane);
 
             for (int j = 0; j < turnPoints.Count; j++)
                 AddPointIfFar(turnPoints[j]);
         }
     }
+
+    private RoadLaneDataV2 FindPreparationLane(RoadLaneDataV2 currentLane, RoadLaneDataV2 nextLane)
+    {
+        if (currentLane == null || nextLane == null)
+            return null;
+
+        RoadSegmentV2 segment = currentLane.ownerSegment;
+        if (segment == null)
+            return null;
+
+        List<RoadLaneDataV2> sameSegmentLanes = segment.GetDrivingLanes(currentLane.fromNode, currentLane.toNode);
+        if (sameSegmentLanes == null || sameSegmentLanes.Count == 0)
+            return null;
+
+        RoadLaneDataV2 bestLane = null;
+        float bestScore = float.MaxValue;
+
+        for (int i = 0; i < sameSegmentLanes.Count; i++)
+        {
+            RoadLaneDataV2 candidate = sameSegmentLanes[i];
+            if (candidate == null)
+                continue;
+
+            RoadLaneConnectionV2 directConnection = FindConnection(candidate, nextLane);
+            if (directConnection == null)
+                continue;
+
+            float score = Mathf.Abs(candidate.localLaneIndex - currentLane.localLaneIndex);
+
+            switch (directConnection.movementType)
+            {
+                case RoadLaneConnectionV2.MovementType.Left:
+                    score += candidate.localLaneIndex * 0.25f;
+                    break;
+
+                case RoadLaneConnectionV2.MovementType.Right:
+                    score += (10f - candidate.localLaneIndex) * 0.05f;
+                    break;
+
+                case RoadLaneConnectionV2.MovementType.Straight:
+                    score += 0f;
+                    break;
+            }
+
+            if (score < bestScore)
+            {
+                bestScore = score;
+                bestLane = candidate;
+            }
+        }
+
+        return bestLane;
+    }
+    private List<Vector3> BuildLaneChangeWithinSegment(RoadLaneDataV2 fromLane, RoadLaneDataV2 toLane)
+    {
+        List<Vector3> points = new List<Vector3>();
+
+        if (fromLane == null || toLane == null)
+            return points;
+
+        if (fromLane.ownerSegment != toLane.ownerSegment)
+            return points;
+
+        Vector3 dir = fromLane.DirectionVector.normalized;
+
+        float startBack = 1.10f;
+        float endBack = 0.45f;
+
+        Vector3 p0 = fromLane.end - dir * startBack;
+        Vector3 p2 = toLane.end - dir * endBack;
+
+        Vector3 mid = Vector3.Lerp(p0, p2, 0.5f);
+
+        points.Add(p0);
+        AddPointIfFar(points, mid);
+        AddPointIfFar(points, p2);
+
+        return points;
+    }
+
+
 
     private GateInfo BuildGateFromRealConnection(RoadLaneConnectionV2 connection)
     {
@@ -256,7 +354,11 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         float signedAngle = Vector3.SignedAngle(inDir, outDir, Vector3.forward);
         float absAngle = Mathf.Abs(signedAngle);
 
-        points.Add(fromAnchor);
+        Vector3 laneExitPoint = fromLane.end;
+        if (points.Count == 0 || Vector3.Distance(laneExitPoint, fromAnchor) > 0.01f)
+            points.Add(laneExitPoint);
+
+        AddPointIfFar(points, fromAnchor);
 
         if (absAngle < 20f || Vector3.Distance(fromAnchor, toAnchor) < 0.15f)
         {
