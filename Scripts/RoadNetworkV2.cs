@@ -61,7 +61,52 @@ public class RoadNetworkV2 : MonoBehaviour
                 segment.RefreshVisual();
         }
 
+        SyncNodeSignals();
         RebuildLaneGraph();
+    }
+
+    private void SyncNodeSignals()
+    {
+        foreach (RoadNodeV2 node in nodes)
+        {
+            if (node == null)
+                continue;
+
+            bool shouldHaveSignal = node.UsesTrafficLight;
+            RoadNodeSignalV2 signal = node.GetComponent<RoadNodeSignalV2>();
+
+            if (shouldHaveSignal)
+            {
+                if (signal == null)
+                {
+#if UNITY_EDITOR
+                if (!Application.isPlaying)
+                    signal = Undo.AddComponent<RoadNodeSignalV2>(node.gameObject);
+                else
+                    signal = node.gameObject.AddComponent<RoadNodeSignalV2>();
+#else
+                    signal = node.gameObject.AddComponent<RoadNodeSignalV2>();
+#endif
+                }
+
+                if (signal != null)
+                    signal.SyncFromNode();
+            }
+            else
+            {
+                if (signal == null)
+                    continue;
+
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+                Undo.DestroyObjectImmediate(signal);
+            else
+                Destroy(signal);
+#else
+                Destroy(signal);
+#endif
+            }
+        }
     }
 
     public void RebuildLaneGraph()
@@ -580,6 +625,32 @@ public class RoadNetworkV2 : MonoBehaviour
             return nearestNode;
 
         return CreateNode(position);
+    }
+
+    public RoadNodeV2 GetNearestIntersectionNode(Vector3 position, float maxDistance)
+    {
+        position.z = 0f;
+
+        float bestDistance = maxDistance;
+        RoadNodeV2 bestNode = null;
+
+        foreach (RoadNodeV2 node in nodes)
+        {
+            if (node == null)
+                continue;
+
+            if (node.ConnectedSegments.Count <= 2)
+                continue;
+
+            float distance = Vector3.Distance(node.transform.position, position);
+            if (distance <= bestDistance)
+            {
+                bestDistance = distance;
+                bestNode = node;
+            }
+        }
+
+        return bestNode;
     }
 
     public RoadNodeV2 GetNearestIntersectionNode(Vector3 position, float maxDistance)

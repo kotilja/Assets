@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+[ExecuteAlways]
 public class RoadNodeSignalV2 : MonoBehaviour
 {
     private enum CycleState
@@ -9,6 +10,21 @@ public class RoadNodeSignalV2 : MonoBehaviour
         Phase1Yellow,
         Phase2Green,
         Phase2Yellow
+    }
+
+    private enum LampState
+    {
+        Red,
+        Yellow,
+        Green
+    }
+
+    private class SignalHeadVisual
+    {
+        public RoadSegmentV2 segment;
+        public GameObject rootObject;
+        public SpriteRenderer bodyRenderer;
+        public SpriteRenderer lampRenderer;
     }
 
     [Header("Incoming segments by phase")]
@@ -26,35 +42,369 @@ public class RoadNodeSignalV2 : MonoBehaviour
     [SerializeField] private bool allowLeftOnGreen = true;
     [SerializeField] private bool allowRightOnGreen = true;
 
+    [Header("Visuals")]
+    [SerializeField] private float bodyWidth = 0.16f;
+    [SerializeField] private float bodyHeight = 0.24f;
+    [SerializeField] private float lampSize = 0.10f;
+    [SerializeField] private float signalSideOffset = 0.22f;
+    [SerializeField] private float signalBackOffset = 0.05f;
+    [SerializeField] private int bodySortingOrder = 60;
+    [SerializeField] private int lampSortingOrder = 61;
+    [SerializeField] private Color bodyColor = new Color(0.12f, 0.12f, 0.12f, 1f);
+    [SerializeField] private Color redColor = new Color(1f, 0.15f, 0.15f, 1f);
+    [SerializeField] private Color yellowColor = new Color(1f, 0.9f, 0.15f, 1f);
+    [SerializeField] private Color greenColor = new Color(0.2f, 1f, 0.25f, 1f);
+    [SerializeField] private Color offColor = new Color(0.18f, 0.18f, 0.18f, 1f);
+
+    private RoadNodeV2 node;
     private CycleState currentState = CycleState.Phase1Green;
     private float stateTimer = 0f;
 
+    private Transform signalsRoot;
+    private readonly Dictionary<int, SignalHeadVisual> signalHeads = new Dictionary<int, SignalHeadVisual>();
+
+    private static Sprite cachedSprite;
+
+    private void OnEnable()
+    {
+        SyncFromNode();
+    }
+
+    private void Awake()
+    {
+        SyncFromNode();
+    }
+
+    private void OnValidate()
+    {
+        SyncFromNode();
+    }
+
     private void Update()
     {
-        stateTimer += Time.deltaTime;
+        if (node == null)
+            node = GetComponent<RoadNodeV2>();
 
-        switch (currentState)
+        if (node == null)
+            return;
+
+        if (!node.UsesTrafficLight)
         {
-            case CycleState.Phase1Green:
-                if (stateTimer >= phase1GreenDuration)
-                    SwitchState(CycleState.Phase1Yellow);
-                break;
-
-            case CycleState.Phase1Yellow:
-                if (stateTimer >= phase1YellowDuration)
-                    SwitchState(CycleState.Phase2Green);
-                break;
-
-            case CycleState.Phase2Green:
-                if (stateTimer >= phase2GreenDuration)
-                    SwitchState(CycleState.Phase2Yellow);
-                break;
-
-            case CycleState.Phase2Yellow:
-                if (stateTimer >= phase2YellowDuration)
-                    SwitchState(CycleState.Phase1Green);
-                break;
+            SetSignalsVisible(false);
+            return;
         }
+
+        if (Application.isPlaying)
+        {
+            stateTimer += Time.deltaTime;
+
+            switch (currentState)
+            {
+                case CycleState.Phase1Green:
+                    if (stateTimer >= phase1GreenDuration)
+                        SwitchState(CycleState.Phase1Yellow);
+                    break;
+
+                case CycleState.Phase1Yellow:
+                    if (stateTimer >= phase1YellowDuration)
+                        SwitchState(CycleState.Phase2Green);
+                    break;
+
+                case CycleState.Phase2Green:
+                    if (stateTimer >= phase2GreenDuration)
+                        SwitchState(CycleState.Phase2Yellow);
+                    break;
+
+                case CycleState.Phase2Yellow:
+                    if (stateTimer >= phase2YellowDuration)
+                        SwitchState(CycleState.Phase1Green);
+                    break;
+            }
+        }
+
+        RefreshSignalVisuals();
+    }
+
+    public void SyncFromNode()
+    {
+        node = GetComponent<RoadNodeV2>();
+
+        if (node == null)
+            return;
+
+        RebuildIncomingPhases();
+        EnsureSignalsRoot();
+        EnsureSignalHeads();
+        RefreshSignalVisuals();
+    }
+
+    private void RebuildIncomingPhases()
+    {
+        phase1IncomingSegments.Clear();
+        phase2IncomingSegments.Clear();
+
+        if (node == null)
+            return;
+
+        for (int i = 0; i < node.ConnectedSegments.Count; i++)
+        {
+            RoadSegmentV2 segment = node.ConnectedSegments[i];
+            if (segment == null)
+                continue;
+
+            if (!HasIncomingApproach(segment))
+                continue;
+
+            Vector3 dir = GetIncomingDirection(segment);
+            bool horizontal = Mathf.Abs(dir.x) >= Mathf.Abs(dir.y);
+
+            if (horizontal)
+                phase1IncomingSegments.Add(segment);
+            else
+                phase2IncomingSegments.Add(segment);
+        }
+    }
+
+    private bool HasIncomingApproach(RoadSegmentV2 segment)
+    {
+        if (segment == null || node == null)
+            return false;
+
+        if (segment.EndNode == node && segment.ForwardLanes > 0)
+            return true;
+
+        if (segment.StartNode == node && segment.BackwardLanes > 0)
+            return true;
+
+        return false;
+    }
+
+    private Vector3 GetIncomingDirection(RoadSegmentV2 segment)
+    {
+        if (segment == null || node == null)
+            return Vector3.right;
+
+        if (segment.EndNode == node && segment.StartNode != null)
+            return (node.transform.position - segment.StartNode.transform.position).normalized;
+
+        if (segment.StartNode == node && segment.EndNode != null)
+            return (node.transform.position - segment.EndNode.transform.position).normalized;
+
+        return Vector3.right;
+    }
+
+    private Vector3 GetIncomingStopCenter(RoadSegmentV2 segment)
+    {
+        if (segment == null || node == null)
+            return transform.position;
+
+        List<RoadLaneDataV2> incomingLanes = null;
+
+        if (segment.EndNode == node)
+            incomingLanes = segment.GetDrivingLanes(segment.StartNode, segment.EndNode);
+        else if (segment.StartNode == node)
+            incomingLanes = segment.GetDrivingLanes(segment.EndNode, segment.StartNode);
+
+        if (incomingLanes == null || incomingLanes.Count == 0)
+            return transform.position;
+
+        Vector3 sum = Vector3.zero;
+        int count = 0;
+
+        for (int i = 0; i < incomingLanes.Count; i++)
+        {
+            RoadLaneDataV2 lane = incomingLanes[i];
+            if (lane == null)
+                continue;
+
+            sum += lane.end;
+            count++;
+        }
+
+        if (count == 0)
+            return transform.position;
+
+        return sum / count;
+    }
+
+    private Vector3 GetSignalHeadPosition(RoadSegmentV2 segment)
+    {
+        Vector3 stopCenter = GetIncomingStopCenter(segment);
+        Vector3 dir = GetIncomingDirection(segment);
+
+        if (dir.sqrMagnitude < 0.0001f)
+            dir = Vector3.right;
+
+        Vector3 right = new Vector3(dir.y, -dir.x, 0f);
+
+        Vector3 pos =
+            stopCenter
+            - dir * signalBackOffset
+            + right * signalSideOffset;
+
+        pos.z = 0f;
+        return pos;
+    }
+
+    private void EnsureSignalsRoot()
+    {
+        if (signalsRoot != null)
+            return;
+
+        Transform existing = transform.Find("SignalHeads");
+        if (existing != null)
+        {
+            signalsRoot = existing;
+            return;
+        }
+
+        GameObject root = new GameObject("SignalHeads");
+        root.transform.SetParent(transform);
+        root.transform.localPosition = Vector3.zero;
+        root.transform.localRotation = Quaternion.identity;
+        signalsRoot = root.transform;
+    }
+
+    private void EnsureSignalHeads()
+    {
+        EnsureSignalsRoot();
+
+        HashSet<int> requiredIds = new HashSet<int>();
+
+        for (int i = 0; i < phase1IncomingSegments.Count; i++)
+        {
+            RoadSegmentV2 segment = phase1IncomingSegments[i];
+            if (segment == null)
+                continue;
+
+            requiredIds.Add(segment.Id);
+            EnsureSignalHead(segment);
+        }
+
+        for (int i = 0; i < phase2IncomingSegments.Count; i++)
+        {
+            RoadSegmentV2 segment = phase2IncomingSegments[i];
+            if (segment == null)
+                continue;
+
+            requiredIds.Add(segment.Id);
+            EnsureSignalHead(segment);
+        }
+
+        List<int> toRemove = new List<int>();
+
+        foreach (KeyValuePair<int, SignalHeadVisual> pair in signalHeads)
+        {
+            if (!requiredIds.Contains(pair.Key))
+                toRemove.Add(pair.Key);
+        }
+
+        for (int i = 0; i < toRemove.Count; i++)
+        {
+            int key = toRemove[i];
+
+            if (signalHeads.TryGetValue(key, out SignalHeadVisual head))
+            {
+                if (head != null && head.rootObject != null)
+                {
+#if UNITY_EDITOR
+                    if (!Application.isPlaying)
+                        DestroyImmediate(head.rootObject);
+                    else
+                        Destroy(head.rootObject);
+#else
+                    Destroy(head.rootObject);
+#endif
+                }
+            }
+
+            signalHeads.Remove(key);
+        }
+    }
+
+    private void EnsureSignalHead(RoadSegmentV2 segment)
+    {
+        if (segment == null || signalsRoot == null)
+            return;
+
+        if (signalHeads.TryGetValue(segment.Id, out SignalHeadVisual existing) &&
+            existing != null &&
+            existing.rootObject != null)
+        {
+            existing.segment = segment;
+            return;
+        }
+
+        GameObject root = new GameObject($"SignalHead_{segment.Id}");
+        root.transform.SetParent(signalsRoot);
+        root.transform.localPosition = Vector3.zero;
+        root.transform.localRotation = Quaternion.identity;
+
+        SpriteRenderer body = root.AddComponent<SpriteRenderer>();
+        body.sprite = GetWhiteSprite();
+        body.sortingOrder = bodySortingOrder;
+
+        GameObject lampObject = new GameObject("Lamp");
+        lampObject.transform.SetParent(root.transform);
+        lampObject.transform.localPosition = Vector3.zero;
+        lampObject.transform.localRotation = Quaternion.identity;
+
+        SpriteRenderer lamp = lampObject.AddComponent<SpriteRenderer>();
+        lamp.sprite = GetWhiteSprite();
+        lamp.sortingOrder = lampSortingOrder;
+
+        SignalHeadVisual head = new SignalHeadVisual
+        {
+            segment = segment,
+            rootObject = root,
+            bodyRenderer = body,
+            lampRenderer = lamp
+        };
+
+        signalHeads[segment.Id] = head;
+    }
+
+    private void RefreshSignalVisuals()
+    {
+        if (node == null)
+            return;
+
+        bool visible = node.UsesTrafficLight;
+        SetSignalsVisible(visible);
+
+        if (!visible)
+            return;
+
+        EnsureSignalHeads();
+
+        foreach (KeyValuePair<int, SignalHeadVisual> pair in signalHeads)
+        {
+            SignalHeadVisual head = pair.Value;
+            if (head == null || head.segment == null || head.rootObject == null)
+                continue;
+
+            Vector3 pos = GetSignalHeadPosition(head.segment);
+            head.rootObject.transform.position = pos;
+
+            if (head.bodyRenderer != null)
+            {
+                head.bodyRenderer.color = bodyColor;
+                head.bodyRenderer.transform.localScale = new Vector3(bodyWidth, bodyHeight, 1f);
+            }
+
+            if (head.lampRenderer != null)
+            {
+                head.lampRenderer.color = GetLampColor(GetLampStateForSegment(head.segment));
+                head.lampRenderer.transform.localPosition = Vector3.zero;
+                head.lampRenderer.transform.localScale = new Vector3(lampSize, lampSize, 1f);
+            }
+        }
+    }
+
+    private void SetSignalsVisible(bool visible)
+    {
+        if (signalsRoot != null)
+            signalsRoot.gameObject.SetActive(visible);
     }
 
     private void SwitchState(CycleState newState)
@@ -75,6 +425,12 @@ public class RoadNodeSignalV2 : MonoBehaviour
     {
         if (incomingSegment == null)
             return false;
+
+        if (node == null)
+            node = GetComponent<RoadNodeV2>();
+
+        if (node == null || !node.UsesTrafficLight)
+            return true;
 
         if (!MovementTypeAllowed(movementType))
             return false;
@@ -115,6 +471,49 @@ public class RoadNodeSignalV2 : MonoBehaviour
         }
 
         return true;
+    }
+
+    private LampState GetLampStateForSegment(RoadSegmentV2 incomingSegment)
+    {
+        if (incomingSegment == null)
+            return LampState.Red;
+
+        bool inPhase1 = phase1IncomingSegments.Contains(incomingSegment);
+        bool inPhase2 = phase2IncomingSegments.Contains(incomingSegment);
+
+        switch (currentState)
+        {
+            case CycleState.Phase1Green:
+                return inPhase1 ? LampState.Green : LampState.Red;
+
+            case CycleState.Phase1Yellow:
+                return inPhase1 ? LampState.Yellow : LampState.Red;
+
+            case CycleState.Phase2Green:
+                return inPhase2 ? LampState.Green : LampState.Red;
+
+            case CycleState.Phase2Yellow:
+                return inPhase2 ? LampState.Yellow : LampState.Red;
+        }
+
+        return LampState.Red;
+    }
+
+    private Color GetLampColor(LampState state)
+    {
+        switch (state)
+        {
+            case LampState.Red:
+                return redColor;
+
+            case LampState.Yellow:
+                return yellowColor;
+
+            case LampState.Green:
+                return greenColor;
+        }
+
+        return offColor;
     }
 
     public string GetCurrentPhaseLabel()
@@ -160,5 +559,21 @@ public class RoadNodeSignalV2 : MonoBehaviour
         }
 
         return 0f;
+    }
+
+    private static Sprite GetWhiteSprite()
+    {
+        if (cachedSprite != null)
+            return cachedSprite;
+
+        Texture2D tex = Texture2D.whiteTexture;
+        cachedSprite = Sprite.Create(
+            tex,
+            new Rect(0f, 0f, tex.width, tex.height),
+            new Vector2(0.5f, 0.5f),
+            100f
+        );
+
+        return cachedSprite;
     }
 }

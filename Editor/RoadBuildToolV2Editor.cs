@@ -66,10 +66,10 @@ public class RoadBuildToolV2Editor : Editor
         switch (Tool.CurrentToolMode)
         {
             case RoadBuildToolV2.ToolMode.DrawRoad:
-                return "Режим рисования: ЛКМ в Scene View ставит узел или создает сегмент. Esc завершает текущую цепочку.";
+                return "Режим рисования: ЛКМ ставит узел или создает сегмент. Esc завершает текущую цепочку.";
 
             case RoadBuildToolV2.ToolMode.DeleteRoad:
-                return "Режим удаления: ЛКМ в Scene View удаляет ближайший сегмент дороги.";
+                return "Режим удаления: ЛКМ удаляет ближайший сегмент дороги.";
 
             case RoadBuildToolV2.ToolMode.JunctionControl:
                 return "Режим перекрестков: ЛКМ по существующему перекрестку переключает режим RightHandRule / TrafficLight.";
