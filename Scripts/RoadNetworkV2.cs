@@ -215,40 +215,7 @@ public class RoadNetworkV2 : MonoBehaviour
         return best;
     }
 
-    private RoadLaneDataV2 GetExtremeLaneByIndex(List<RoadLaneDataV2> candidates, bool preferHighestIndex)
-    {
-        if (candidates == null || candidates.Count == 0)
-            return null;
-
-        RoadLaneDataV2 best = null;
-
-        for (int i = 0; i < candidates.Count; i++)
-        {
-            RoadLaneDataV2 candidate = candidates[i];
-            if (candidate == null)
-                continue;
-
-            if (best == null)
-            {
-                best = candidate;
-                continue;
-            }
-
-            if (preferHighestIndex)
-            {
-                if (candidate.localLaneIndex > best.localLaneIndex)
-                    best = candidate;
-            }
-            else
-            {
-                if (candidate.localLaneIndex < best.localLaneIndex)
-                    best = candidate;
-            }
-        }
-
-        return best;
-    }
-
+    
     private int GetDirectionalLaneCount(RoadLaneDataV2 lane)
     {
         if (lane == null || lane.ownerSegment == null)
