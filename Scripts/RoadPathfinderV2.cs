@@ -258,76 +258,75 @@ public static class RoadPathfinderV2
     }
 
     private static float GetTransitionCost(RoadLaneDataV2 currentLane, RoadLaneDataV2 nextLane)
-{
-    if (currentLane == null || nextLane == null)
-        return 10000f;
-
-    bool hasRealConnection = false;
-    RoadLaneConnectionV2.MovementType movementType = InferMovementType(currentLane, nextLane);
-
-    for (int i = 0; i < currentLane.outgoingConnections.Count; i++)
     {
-        RoadLaneConnectionV2 connection = currentLane.outgoingConnections[i];
+        if (currentLane == null || nextLane == null)
+            return 10000f;
 
-        if (connection == null || !connection.IsValid)
-            continue;
+        bool hasRealConnection = false;
+        RoadLaneConnectionV2.MovementType movementType = InferMovementType(currentLane, nextLane);
 
-        if (connection.toLane == nextLane)
+        for (int i = 0; i < currentLane.outgoingConnections.Count; i++)
         {
-            hasRealConnection = true;
-            movementType = connection.movementType;
-            break;
+            RoadLaneConnectionV2 connection = currentLane.outgoingConnections[i];
+
+            if (connection == null || !connection.IsValid)
+                continue;
+
+            if (connection.toLane == nextLane)
+            {
+                hasRealConnection = true;
+                movementType = connection.movementType;
+                break;
+            }
         }
+
+        float cost = 0f;
+
+        // Реальный connection лучше, но синтетический тоже допустим.
+        if (!hasRealConnection)
+            cost += 20f;
+
+        // Штраф за скачок по индексу полос.
+        cost += Mathf.Abs(currentLane.localLaneIndex - nextLane.localLaneIndex) * 2f;
+
+        switch (movementType)
+        {
+            case RoadLaneConnectionV2.MovementType.Left:
+                cost += 3f;
+                break;
+
+            case RoadLaneConnectionV2.MovementType.Right:
+                cost += 1f;
+                break;
+
+            case RoadLaneConnectionV2.MovementType.Straight:
+                cost += 0f;
+                break;
+        }
+
+        return cost;
     }
 
-    float cost = 0f;
-
-    // Реальный connection предпочтительнее, но синтетический тоже допустим.
-    if (!hasRealConnection)
-        cost += 20f;
-
-    // Штраф за резкое смещение по индексу полосы.
-    cost += Mathf.Abs(currentLane.localLaneIndex - nextLane.localLaneIndex) * 2f;
-
-    // Лёгкое предпочтение более простым манёврам.
-    switch (movementType)
+    private static RoadLaneConnectionV2.MovementType InferMovementType(RoadLaneDataV2 currentLane, RoadLaneDataV2 nextLane)
     {
-        case RoadLaneConnectionV2.MovementType.Left:
-            cost += 3f;
-            break;
+        if (currentLane == null || nextLane == null)
+            return RoadLaneConnectionV2.MovementType.Straight;
 
-        case RoadLaneConnectionV2.MovementType.Right:
-            cost += 1f;
-            break;
+        float angle = Vector3.SignedAngle(
+            currentLane.DirectionVector.normalized,
+            nextLane.DirectionVector.normalized,
+            Vector3.forward
+        );
 
-        case RoadLaneConnectionV2.MovementType.Straight:
-            cost += 0f;
-            break;
+        float absAngle = Mathf.Abs(angle);
+
+        if (absAngle < 20f)
+            return RoadLaneConnectionV2.MovementType.Straight;
+
+        return angle > 0f
+            ? RoadLaneConnectionV2.MovementType.Left
+            : RoadLaneConnectionV2.MovementType.Right;
     }
-
-    return cost;
-}
-
-private static RoadLaneConnectionV2.MovementType InferMovementType(RoadLaneDataV2 currentLane, RoadLaneDataV2 nextLane)
-{
-    if (currentLane == null || nextLane == null)
-        return RoadLaneConnectionV2.MovementType.Straight;
-
-    float angle = UnityEngine.Vector3.SignedAngle(
-        currentLane.DirectionVector.normalized,
-        nextLane.DirectionVector.normalized,
-        UnityEngine.Vector3.forward
-    );
-
-    float absAngle = UnityEngine.Mathf.Abs(angle);
-
-    if (absAngle < 20f)
-        return RoadLaneConnectionV2.MovementType.Straight;
-
-    return angle > 0f
-        ? RoadLaneConnectionV2.MovementType.Left
-        : RoadLaneConnectionV2.MovementType.Right;
-}
 
     private static float GetLanePreferenceCost(RoadLaneDataV2 lane, RoadSegmentV2 nextSegment)
     {
