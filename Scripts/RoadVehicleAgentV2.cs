@@ -35,7 +35,7 @@ public class RoadVehicleAgentV2 : MonoBehaviour
     }
 
 
-    public void Initialize(List<RoadLaneDataV2> lanePath)
+    public void Initialize(List<RoadLaneDataV2> lanePath, RoadLaneDataV2 initialLane = null)
     {
         if (lanePath == null || lanePath.Count == 0)
         {
@@ -43,11 +43,13 @@ public class RoadVehicleAgentV2 : MonoBehaviour
             return;
         }
 
+        RoadLaneDataV2 actualInitialLane = initialLane ?? lanePath[0];
+
         waypoints.Clear();
         gatedWaypointIndices.Clear();
         currentWaypointIndex = 0;
 
-        BuildWaypointPath(lanePath);
+        BuildWaypointPath(actualInitialLane, lanePath);
 
         if (waypoints.Count < 2)
         {
@@ -133,9 +135,16 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         return allowed;
     }
 
-    private void BuildWaypointPath(List<RoadLaneDataV2> lanePath)
+    private void BuildWaypointPath(RoadLaneDataV2 initialLane, List<RoadLaneDataV2> lanePath)
     {
-        AddPointIfFar(lanePath[0].start);
+        AddPointIfFar(initialLane.start);
+
+        if (initialLane != null && lanePath.Count > 0 && AreSameDirectionalSegmentLane(initialLane, lanePath[0]) && initialLane != lanePath[0])
+        {
+            List<Vector3> firstLaneChange = BuildLaneChangeWithinSegment(initialLane, lanePath[0]);
+            for (int i = 0; i < firstLaneChange.Count; i++)
+                AddPointIfFar(firstLaneChange[i]);
+        }
 
         for (int i = 0; i < lanePath.Count; i++)
         {
@@ -150,38 +159,43 @@ public class RoadVehicleAgentV2 : MonoBehaviour
 
             RoadLaneDataV2 nextLane = lanePath[i + 1];
 
-            RoadLaneDataV2 transitionLane = currentLane;
-            RoadLaneConnectionV2 connection = FindConnection(currentLane, nextLane);
-
-            if (connection == null)
+            if (AreSameDirectionalSegmentLane(currentLane, nextLane))
             {
-                RoadLaneDataV2 preparationLane = FindPreparationLane(currentLane, nextLane);
+                List<Vector3> internalLaneChange = BuildLaneChangeWithinSegment(currentLane, nextLane);
 
-                if (preparationLane != null && preparationLane != currentLane)
-                {
-                    List<Vector3> laneChangePoints = BuildLaneChangeWithinSegment(currentLane, preparationLane);
-                    for (int j = 0; j < laneChangePoints.Count; j++)
-                        AddPointIfFar(laneChangePoints[j]);
+                for (int j = 0; j < internalLaneChange.Count; j++)
+                    AddPointIfFar(internalLaneChange[j]);
 
-                    transitionLane = preparationLane;
-                    connection = FindConnection(transitionLane, nextLane);
-                }
+                continue;
             }
+
+            RoadLaneConnectionV2 connection = FindConnection(currentLane, nextLane);
 
             int gateIndex = waypoints.Count;
 
             GateInfo gate = connection != null
                 ? BuildGateFromRealConnection(connection)
-                : BuildGateFromSyntheticTurn(transitionLane, nextLane);
+                : BuildGateFromSyntheticTurn(currentLane, nextLane);
 
             if (gate != null)
                 gatedWaypointIndices[gateIndex] = gate;
 
-            List<Vector3> turnPoints = BuildNodeAnchoredTurn(transitionLane, nextLane);
+            List<Vector3> turnPoints = BuildNodeAnchoredTurn(currentLane, nextLane);
 
             for (int j = 0; j < turnPoints.Count; j++)
                 AddPointIfFar(turnPoints[j]);
         }
+    }
+
+    private bool AreSameDirectionalSegmentLane(RoadLaneDataV2 a, RoadLaneDataV2 b)
+    {
+        if (a == null || b == null)
+            return false;
+
+        return
+            a.ownerSegment == b.ownerSegment &&
+            a.fromNode == b.fromNode &&
+            a.toNode == b.toNode;
     }
 
     private RoadLaneDataV2 FindPreparationLane(RoadLaneDataV2 currentLane, RoadLaneDataV2 nextLane)

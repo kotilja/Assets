@@ -10,6 +10,9 @@ public class RoadVehicleSpawnerV2 : MonoBehaviour
     [SerializeField] private RoadNodeV2 startNode;
     [SerializeField] private RoadNodeV2 targetNode;
 
+    [Header("Spawn behavior")]
+    [SerializeField] private bool spawnFromRightmostLane = true;
+
     [Header("Debug keys")]
     [SerializeField] private KeyCode spawnKey = KeyCode.Space;
     [SerializeField] private KeyCode swapDirectionKey = KeyCode.R;
@@ -41,12 +44,43 @@ public class RoadVehicleSpawnerV2 : MonoBehaviour
             return;
         }
 
-        Vector3 spawnPosition = lanePath[0].start;
+        RoadLaneDataV2 spawnLane = GetSpawnLane(lanePath[0]);
+        if (spawnLane == null)
+            spawnLane = lanePath[0];
+
+        Vector3 spawnPosition = spawnLane.start;
         RoadVehicleAgentV2 vehicle = Instantiate(vehiclePrefab, spawnPosition, Quaternion.identity);
-        vehicle.Initialize(lanePath);
+        vehicle.Initialize(lanePath, spawnLane);
 
         if (logPathResult)
             Debug.Log($"V2 path spawned: {GetNodeName(startNode)} -> {GetNodeName(targetNode)}, lanes: {lanePath.Count}");
+    }
+
+    private RoadLaneDataV2 GetSpawnLane(RoadLaneDataV2 plannedLane)
+    {
+        if (plannedLane == null || plannedLane.ownerSegment == null)
+            return plannedLane;
+
+        if (!spawnFromRightmostLane)
+            return plannedLane;
+
+        List<RoadLaneDataV2> candidates = plannedLane.ownerSegment.GetDrivingLanes(plannedLane.fromNode, plannedLane.toNode);
+        if (candidates == null || candidates.Count == 0)
+            return plannedLane;
+
+        RoadLaneDataV2 best = plannedLane;
+
+        for (int i = 0; i < candidates.Count; i++)
+        {
+            RoadLaneDataV2 lane = candidates[i];
+            if (lane == null)
+                continue;
+
+            if (best == null || lane.localLaneIndex < best.localLaneIndex)
+                best = lane;
+        }
+
+        return best;
     }
 
     public void SwapDirection()

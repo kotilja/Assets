@@ -183,6 +183,8 @@ public static class RoadPathfinderV2
             LegInfo currentLeg = legs[legIndex];
             LegInfo nextLeg = legs[legIndex + 1];
 
+            bool requireRealConnection = HasAnyRealConnection(currentLeg.candidates, nextLeg.candidates);
+
             for (int i = 0; i < currentLeg.candidates.Count; i++)
             {
                 RoadLaneDataV2 currentLane = currentLeg.candidates[i];
@@ -201,7 +203,10 @@ public static class RoadPathfinderV2
                     if (!costToEnd[legIndex + 1].TryGetValue(candidateNextLane, out float futureCost))
                         continue;
 
-                    float transitionCost = GetTransitionCost(currentLane, candidateNextLane);
+                    float transitionCost = GetTransitionCost(currentLane, candidateNextLane, requireRealConnection);
+
+                    if (transitionCost >= 10000f)
+                        continue;
 
                     float totalCost =
                         GetLanePreferenceCost(currentLane, nextLeg.segment) +
@@ -257,7 +262,7 @@ public static class RoadPathfinderV2
         return lanePath.Count == legs.Count;
     }
 
-    private static float GetTransitionCost(RoadLaneDataV2 currentLane, RoadLaneDataV2 nextLane)
+    private static float GetTransitionCost(RoadLaneDataV2 currentLane, RoadLaneDataV2 nextLane, bool requireRealConnection)
     {
         if (currentLane == null || nextLane == null)
             return 10000f;
@@ -280,13 +285,14 @@ public static class RoadPathfinderV2
             }
         }
 
+        if (requireRealConnection && !hasRealConnection)
+            return 10000f;
+
         float cost = 0f;
 
-        // Реальный connection лучше, но синтетический тоже допустим.
         if (!hasRealConnection)
             cost += 20f;
 
-        // Штраф за скачок по индексу полос.
         cost += Mathf.Abs(currentLane.localLaneIndex - nextLane.localLaneIndex) * 2f;
 
         switch (movementType)
@@ -305,6 +311,31 @@ public static class RoadPathfinderV2
         }
 
         return cost;
+    }
+
+    private static bool HasAnyRealConnection(List<RoadLaneDataV2> currentCandidates, List<RoadLaneDataV2> nextCandidates)
+    {
+        if (currentCandidates == null || nextCandidates == null)
+            return false;
+
+        for (int i = 0; i < currentCandidates.Count; i++)
+        {
+            RoadLaneDataV2 currentLane = currentCandidates[i];
+            if (currentLane == null)
+                continue;
+
+            for (int j = 0; j < currentLane.outgoingConnections.Count; j++)
+            {
+                RoadLaneConnectionV2 connection = currentLane.outgoingConnections[j];
+                if (connection == null || !connection.IsValid || connection.toLane == null)
+                    continue;
+
+                if (nextCandidates.Contains(connection.toLane))
+                    return true;
+            }
+        }
+
+        return false;
     }
 
     private static RoadLaneConnectionV2.MovementType InferMovementType(RoadLaneDataV2 currentLane, RoadLaneDataV2 nextLane)
