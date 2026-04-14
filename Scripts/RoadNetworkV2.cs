@@ -124,14 +124,9 @@ public class RoadNetworkV2 : MonoBehaviour
         if (incomingLane == null || outgoingLanes == null || outgoingLanes.Count == 0)
             return;
 
-        RoadLaneDataV2 bestStraight = null;
-        float bestStraightAbsAngle = float.MaxValue;
-
-        RoadLaneDataV2 bestLeft = null;
-        float bestLeftAbsAngle = float.MaxValue;
-
-        RoadLaneDataV2 bestRight = null;
-        float bestRightAbsAngle = float.MaxValue;
+        List<RoadLaneDataV2> straightCandidates = new List<RoadLaneDataV2>();
+        List<RoadLaneDataV2> leftCandidates = new List<RoadLaneDataV2>();
+        List<RoadLaneDataV2> rightCandidates = new List<RoadLaneDataV2>();
 
         Vector3 inDirection = incomingLane.DirectionVector.normalized;
 
@@ -152,39 +147,109 @@ public class RoadNetworkV2 : MonoBehaviour
 
             if (absAngle <= straightAngleThreshold)
             {
-                if (absAngle < bestStraightAbsAngle)
-                {
-                    bestStraightAbsAngle = absAngle;
-                    bestStraight = outgoingLane;
-                }
-
-                continue;
+                straightCandidates.Add(outgoingLane);
             }
-
-            if (angle > 0f)
+            else if (angle > 0f)
             {
-                if (absAngle < bestLeftAbsAngle)
-                {
-                    bestLeftAbsAngle = absAngle;
-                    bestLeft = outgoingLane;
-                }
+                leftCandidates.Add(outgoingLane);
             }
             else
             {
-                if (absAngle < bestRightAbsAngle)
-                {
-                    bestRightAbsAngle = absAngle;
-                    bestRight = outgoingLane;
-                }
+                rightCandidates.Add(outgoingLane);
             }
         }
 
+        int incomingLaneCount = GetDirectionalLaneCount(incomingLane);
+        int leftmostIncomingIndex = Mathf.Max(0, incomingLaneCount - 1);
+        int rightmostIncomingIndex = 0;
+
+        RoadLaneDataV2 bestStraight = GetClosestLaneByIndex(straightCandidates, incomingLane.localLaneIndex);
         AddConnectionIfUnique(node, incomingLane, bestStraight);
-        AddConnectionIfUnique(node, incomingLane, bestLeft);
-        AddConnectionIfUnique(node, incomingLane, bestRight);
+
+        // Правый поворот только с правой полосы
+        if (incomingLane.localLaneIndex == rightmostIncomingIndex)
+        {
+            RoadLaneDataV2 bestRight = GetExtremeLaneByIndex(rightCandidates, preferHighestIndex: false);
+            AddConnectionIfUnique(node, incomingLane, bestRight);
+        }
+
+        // Левый поворот только с левой полосы
+        if (incomingLane.localLaneIndex == leftmostIncomingIndex)
+        {
+            RoadLaneDataV2 bestLeft = GetExtremeLaneByIndex(leftCandidates, preferHighestIndex: true);
+            AddConnectionIfUnique(node, incomingLane, bestLeft);
+        }
     }
 
-private void AddConnectionIfUnique(RoadNodeV2 node, RoadLaneDataV2 fromLane, RoadLaneDataV2 toLane)
+    private int GetDirectionalLaneCount(RoadLaneDataV2 lane)
+    {
+        if (lane == null || lane.ownerSegment == null)
+            return 1;
+
+        List<RoadLaneDataV2> lanes = lane.ownerSegment.GetDrivingLanes(lane.fromNode, lane.toNode);
+        return Mathf.Max(1, lanes.Count);
+    }
+
+    private RoadLaneDataV2 GetClosestLaneByIndex(List<RoadLaneDataV2> candidates, int targetIndex)
+    {
+        if (candidates == null || candidates.Count == 0)
+            return null;
+
+        RoadLaneDataV2 best = null;
+        float bestScore = float.MaxValue;
+
+        for (int i = 0; i < candidates.Count; i++)
+        {
+            RoadLaneDataV2 candidate = candidates[i];
+            if (candidate == null)
+                continue;
+
+            float score = Mathf.Abs(candidate.localLaneIndex - targetIndex);
+            if (score < bestScore)
+            {
+                bestScore = score;
+                best = candidate;
+            }
+        }
+
+        return best;
+    }
+
+    private RoadLaneDataV2 GetExtremeLaneByIndex(List<RoadLaneDataV2> candidates, bool preferHighestIndex)
+    {
+        if (candidates == null || candidates.Count == 0)
+            return null;
+
+        RoadLaneDataV2 best = null;
+
+        for (int i = 0; i < candidates.Count; i++)
+        {
+            RoadLaneDataV2 candidate = candidates[i];
+            if (candidate == null)
+                continue;
+
+            if (best == null)
+            {
+                best = candidate;
+                continue;
+            }
+
+            if (preferHighestIndex)
+            {
+                if (candidate.localLaneIndex > best.localLaneIndex)
+                    best = candidate;
+            }
+            else
+            {
+                if (candidate.localLaneIndex < best.localLaneIndex)
+                    best = candidate;
+            }
+        }
+
+        return best;
+    }
+
+    private void AddConnectionIfUnique(RoadNodeV2 node, RoadLaneDataV2 fromLane, RoadLaneDataV2 toLane)
 {
     if (node == null || fromLane == null || toLane == null)
         return;
