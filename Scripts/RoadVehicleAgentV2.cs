@@ -352,10 +352,9 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         float signedAngle = Vector3.SignedAngle(inDir, outDir, Vector3.forward);
         float absAngle = Mathf.Abs(signedAngle);
 
-        Vector3 laneExitPoint = fromLane.end;
-        if (points.Count == 0 || Vector3.Distance(laneExitPoint, fromAnchor) > 0.01f)
-            points.Add(laneExitPoint);
+        Vector3 stopPoint = GetStopPointBeforeNode(fromLane, fromAnchor, inDir);
 
+        points.Add(stopPoint);
         AddPointIfFar(points, fromAnchor);
 
         if (absAngle < 20f || Vector3.Distance(fromAnchor, toAnchor) < 0.15f)
@@ -375,6 +374,16 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         AddPointIfFar(points, Vector3.Lerp(fromAnchor, toAnchor, 0.5f));
         AddPointIfFar(points, toAnchor);
         return points;
+    }
+
+    private Vector3 GetStopPointBeforeNode(RoadLaneDataV2 fromLane, Vector3 fromAnchor, Vector3 inDir)
+    {
+        float offset = 0.18f;
+
+        if (fromLane != null && fromLane.ownerSegment != null)
+            offset = fromLane.ownerSegment.StopLineOffset;
+
+        return fromAnchor - inDir.normalized * offset;
     }
 
     private void GetNodeHalfExtents(RoadNodeV2 node, out float halfX, out float halfY)

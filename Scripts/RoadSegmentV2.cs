@@ -14,6 +14,7 @@ public class RoadSegmentV2 : MonoBehaviour
     [SerializeField] private float laneWidth = 0.6f;
     [SerializeField] private float speedLimit = 3f;
     [SerializeField] private float junctionInset = 0.35f;
+    [SerializeField] private float stopLineOffset = 0.18f;
 
     [Header("Visuals")]
     [SerializeField] private Color roadColor = new Color(0.18f, 0.18f, 0.18f, 1f);
@@ -21,6 +22,9 @@ public class RoadSegmentV2 : MonoBehaviour
     [SerializeField] private Color backwardLaneColor = new Color(1f, 0.85f, 0.75f, 1f);
     [SerializeField] private float laneLineWidth = 0.08f;
     [SerializeField] private bool showLaneArrows = true;
+    [SerializeField] private Color stopLineColor = new Color(1f, 1f, 1f, 0.95f);
+    [SerializeField] private float stopLineWidth = 0.12f;
+    [SerializeField] private int stopLineSortingOrder = 20;
 
     [Header("Arrow visuals")]
     [SerializeField] private float arrowLengthScale = 0.7f;
@@ -31,6 +35,8 @@ public class RoadSegmentV2 : MonoBehaviour
 
     private LineRenderer roadRenderer;
     private Material cachedMaterial;
+    private LineRenderer forwardStopLineRenderer;
+    private LineRenderer backwardStopLineRenderer;
 
     private Transform lanesRoot;
     private readonly List<RoadLaneV2> laneVisuals = new List<RoadLaneV2>();
@@ -52,6 +58,7 @@ public class RoadSegmentV2 : MonoBehaviour
     public bool IsOneWay => backwardLanes <= 0;
     public int TotalLaneCount => Mathf.Max(1, forwardLanes + Mathf.Max(0, backwardLanes));
     public float TotalRoadWidth => TotalLaneCount * laneWidth;
+    public float StopLineOffset => stopLineOffset;
 
     public void Initialize(
         int newId,
@@ -236,12 +243,25 @@ private void OnDestroy()
            10
             );
 
+
+
             UpdateArrowVisual(
                  arrowRenderers[laneCounter],
                   trimmedForwardEnd,
                   trimmedForwardStart,
                  backwardLaneColor,
                   $"Arrow_Backward_{i}"
+                );
+
+            UpdateStopLineVisuals(
+                     start,
+                     end,
+                     direction,
+                    normal,
+                     startCut,
+                     endCut,
+                     rightEdgeCenter,
+                     leftEdgeCenter
                 );
 
             RoadLaneDataV2 lane = laneData[laneCounter];
@@ -258,6 +278,88 @@ private void OnDestroy()
 
             laneCounter++;
         }
+    }
+
+    private void UpdateStopLineVisuals(
+    Vector3 start,
+    Vector3 end,
+    Vector3 direction,
+    Vector3 normal,
+    float startCut,
+    float endCut,
+    float rightEdgeCenter,
+    float leftEdgeCenter)
+    {
+        EnsureStopLineRenderers();
+
+        bool showForward = forwardLanes > 0 && endNode != null && endNode.ConnectedSegments.Count > 2;
+        bool showBackward = backwardLanes > 0 && startNode != null && startNode.ConnectedSegments.Count > 2;
+
+        float forwardCenterOffset = rightEdgeCenter + (forwardLanes - 1) * laneWidth * 0.5f;
+        float backwardCenterOffset = leftEdgeCenter - (backwardLanes - 1) * laneWidth * 0.5f;
+
+        float forwardWidth = forwardLanes * laneWidth;
+        float backwardWidth = backwardLanes * laneWidth;
+
+        Vector3 forwardBase = end - direction * (endCut + stopLineOffset);
+        Vector3 backwardBase = start + direction * (startCut + stopLineOffset);
+
+        UpdateStopLineRenderer(
+            forwardStopLineRenderer,
+            showForward,
+            "StopLine_Forward",
+            forwardBase,
+            normal,
+            forwardCenterOffset,
+            forwardWidth
+        );
+
+        UpdateStopLineRenderer(
+            backwardStopLineRenderer,
+            showBackward,
+            "StopLine_Backward",
+            backwardBase,
+            normal,
+            backwardCenterOffset,
+            backwardWidth
+        );
+    }
+
+    private void UpdateStopLineRenderer(
+    LineRenderer renderer,
+    bool visible,
+    string objectName,
+    Vector3 basePoint,
+    Vector3 normal,
+    float carriageCenterOffset,
+    float carriageWidth)
+    {
+        if (renderer == null)
+            return;
+
+        renderer.gameObject.name = objectName;
+        renderer.enabled = visible;
+
+        if (!visible || carriageWidth <= 0.01f)
+            return;
+
+        Vector3 center = basePoint + normal * carriageCenterOffset;
+        Vector3 halfSpan = normal * (carriageWidth * 0.5f);
+
+        Vector3 a = center - halfSpan;
+        Vector3 b = center + halfSpan;
+
+        a.z = 0f;
+        b.z = 0f;
+
+        renderer.positionCount = 2;
+        renderer.SetPosition(0, a);
+        renderer.SetPosition(1, b);
+        renderer.startWidth = stopLineWidth;
+        renderer.endWidth = stopLineWidth;
+        renderer.startColor = stopLineColor;
+        renderer.endColor = stopLineColor;
+        renderer.sortingOrder = stopLineSortingOrder;
     }
 
     public bool TryGetDrivingLane(RoadNodeV2 fromNode, RoadNodeV2 toNode, out RoadLaneDataV2 lane)
@@ -411,6 +513,64 @@ private void OnDestroy()
             if (arrowRenderers[i] != null)
                 arrowRenderers[i].gameObject.SetActive(active);
         }
+    }
+
+    private void EnsureStopLineRenderers()
+    {
+        if (forwardStopLineRenderer == null)
+        {
+            Transform existing = transform.Find("StopLine_Forward");
+            if (existing != null)
+                forwardStopLineRenderer = existing.GetComponent<LineRenderer>();
+
+            if (forwardStopLineRenderer == null)
+            {
+                GameObject go = new GameObject("StopLine_Forward");
+                go.transform.SetParent(transform);
+                go.transform.localPosition = Vector3.zero;
+                go.transform.localRotation = Quaternion.identity;
+                forwardStopLineRenderer = go.AddComponent<LineRenderer>();
+            }
+        }
+
+        if (backwardStopLineRenderer == null)
+        {
+            Transform existing = transform.Find("StopLine_Backward");
+            if (existing != null)
+                backwardStopLineRenderer = existing.GetComponent<LineRenderer>();
+
+            if (backwardStopLineRenderer == null)
+            {
+                GameObject go = new GameObject("StopLine_Backward");
+                go.transform.SetParent(transform);
+                go.transform.localPosition = Vector3.zero;
+                go.transform.localRotation = Quaternion.identity;
+                backwardStopLineRenderer = go.AddComponent<LineRenderer>();
+            }
+        }
+
+        ConfigureStopLineRenderer(forwardStopLineRenderer);
+        ConfigureStopLineRenderer(backwardStopLineRenderer);
+    }
+
+    private void ConfigureStopLineRenderer(LineRenderer renderer)
+    {
+        if (renderer == null)
+            return;
+
+        if (cachedMaterial == null)
+        {
+            Shader shader = Shader.Find("Sprites/Default");
+            cachedMaterial = new Material(shader);
+            cachedMaterial.hideFlags = HideFlags.HideAndDontSave;
+        }
+
+        renderer.sharedMaterial = cachedMaterial;
+        renderer.useWorldSpace = true;
+        renderer.numCapVertices = 0;
+        renderer.numCornerVertices = 0;
+        renderer.textureMode = LineTextureMode.Stretch;
+        renderer.alignment = LineAlignment.TransformZ;
     }
 
     private void EnsureRoadRenderer()
