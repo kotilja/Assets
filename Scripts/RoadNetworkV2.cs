@@ -358,37 +358,38 @@ public class RoadNetworkV2 : MonoBehaviour
     }
 
     private void AddConnectionIfUnique(RoadNodeV2 node, RoadLaneDataV2 fromLane, RoadLaneDataV2 toLane)
-{
-    if (node == null || fromLane == null || toLane == null)
-        return;
-
-    foreach (RoadLaneConnectionV2 existing in fromLane.outgoingConnections)
     {
-        if (existing != null && existing.toLane == toLane)
+        if (node == null || fromLane == null || toLane == null)
             return;
+
+        foreach (RoadLaneConnectionV2 existing in fromLane.outgoingConnections)
+        {
+            if (existing != null && existing.toLane == toLane)
+                return;
+        }
+
+        float turnScore = CalculateTurnScore(fromLane, toLane);
+        RoadLaneConnectionV2.MovementType movementType = GetMovementType(turnScore);
+
+        if (!node.AllowsMovement(movementType))
+            return;
+
+        RoadLaneConnectionV2 connection = new RoadLaneConnectionV2
+        {
+            fromLane = fromLane,
+            toLane = toLane,
+            connectionKind = RoadLaneConnectionV2.ConnectionKind.Junction,
+            junctionNode = node,
+            junctionPoint = node.transform.position,
+            turnScore = turnScore,
+            movementType = movementType,
+            curvePoints = BuildConnectionCurvePoints(fromLane, toLane, node.transform.position)
+        };
+
+        allConnections.Add(connection);
+        fromLane.outgoingConnections.Add(connection);
+        toLane.incomingConnections.Add(connection);
     }
-
-    float turnScore = CalculateTurnScore(fromLane, toLane);
-    RoadLaneConnectionV2.MovementType movementType = GetMovementType(turnScore);
-
-    if (!node.AllowsMovement(movementType))
-        return;
-
-    RoadLaneConnectionV2 connection = new RoadLaneConnectionV2
-    {
-        fromLane = fromLane,
-        toLane = toLane,
-        junctionNode = node,
-        junctionPoint = node.transform.position,
-        turnScore = turnScore,
-        movementType = movementType,
-        curvePoints = BuildConnectionCurvePoints(fromLane, toLane, node.transform.position)
-    };
-
-    allConnections.Add(connection);
-    fromLane.outgoingConnections.Add(connection);
-    toLane.incomingConnections.Add(connection);
-}
 
     private float CalculateTurnScore(RoadLaneDataV2 fromLane, RoadLaneDataV2 toLane)
     {
