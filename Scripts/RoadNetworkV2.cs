@@ -216,39 +216,7 @@ public class RoadNetworkV2 : MonoBehaviour
     }
 
     
-    private int GetDirectionalLaneCount(RoadLaneDataV2 lane)
-    {
-        if (lane == null || lane.ownerSegment == null)
-            return 1;
-
-        List<RoadLaneDataV2> lanes = lane.ownerSegment.GetDrivingLanes(lane.fromNode, lane.toNode);
-        return Mathf.Max(1, lanes.Count);
-    }
-
-    private RoadLaneDataV2 GetClosestLaneByIndex(List<RoadLaneDataV2> candidates, int targetIndex)
-    {
-        if (candidates == null || candidates.Count == 0)
-            return null;
-
-        RoadLaneDataV2 best = null;
-        float bestScore = float.MaxValue;
-
-        for (int i = 0; i < candidates.Count; i++)
-        {
-            RoadLaneDataV2 candidate = candidates[i];
-            if (candidate == null)
-                continue;
-
-            float score = Mathf.Abs(candidate.localLaneIndex - targetIndex);
-            if (score < bestScore)
-            {
-                bestScore = score;
-                best = candidate;
-            }
-        }
-
-        return best;
-    }
+ 
 
     private RoadLaneDataV2 GetExtremeLaneByIndex(List<RoadLaneDataV2> candidates, bool preferHighestIndex)
     {
