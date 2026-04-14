@@ -90,6 +90,21 @@ public class RoadNodeV2 : MonoBehaviour
         transform.localScale = new Vector3(visualSize, visualSize, 1f);
     }
 
+    public enum JunctionControlMode
+    {
+        RightHandRule,
+        TrafficLight
+    }
+
+    [SerializeField] private JunctionControlMode controlMode = JunctionControlMode.RightHandRule;
+
+    public JunctionControlMode ControlMode => controlMode;
+
+    public void SetControlMode(JunctionControlMode mode)
+    {
+        controlMode = mode;
+    }
+
     private static Sprite GetWhiteSprite()
     {
         if (cachedSprite != null)

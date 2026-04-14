@@ -33,6 +33,13 @@ public class RoadSegmentV2 : MonoBehaviour
     [SerializeField] private float arrowZOffset = -0.1f;
     [SerializeField] private float arrowAngleOffset = 180f;
 
+    [Header("Lane change")]
+    [SerializeField] private bool allowLaneChanges = true;
+    [SerializeField] private float noLaneChangeNearStart = 0.9f;
+    [SerializeField] private float noLaneChangeNearEnd = 1.4f;
+    [SerializeField] private float laneChangeStep = 1.6f;
+    [SerializeField] private float laneChangeLength = 0.9f;
+
     private LineRenderer roadRenderer;
     private Material cachedMaterial;
     private LineRenderer forwardStopLineRenderer;
@@ -54,6 +61,11 @@ public class RoadSegmentV2 : MonoBehaviour
     public float SpeedLimit => speedLimit;
     public IReadOnlyList<RoadLaneDataV2> LaneData => laneData;
     public float JunctionInset => junctionInset;
+    public bool AllowLaneChanges => allowLaneChanges;
+    public float NoLaneChangeNearStart => noLaneChangeNearStart;
+    public float NoLaneChangeNearEnd => noLaneChangeNearEnd;
+    public float LaneChangeStep => laneChangeStep;
+    public float LaneChangeLength => laneChangeLength;
 
     public bool IsOneWay => backwardLanes <= 0;
     public int TotalLaneCount => Mathf.Max(1, forwardLanes + Mathf.Max(0, backwardLanes));

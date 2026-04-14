@@ -98,6 +98,12 @@ public class RoadNetworkV2 : MonoBehaviour
             }
         }
 
+        foreach (RoadSegmentV2 segment in segments)
+        {
+            if (segment != null)
+                BuildLaneChangeConnectionsForSegment(segment);
+        }
+
         foreach (RoadNodeV2 node in nodes)
         {
             if (node == null)
@@ -110,10 +116,109 @@ public class RoadNetworkV2 : MonoBehaviour
                 continue;
 
             foreach (RoadLaneDataV2 inLane in incoming)
-            {
                 BuildBestConnectionsForIncomingLane(node, inLane, outgoing);
-            }
         }
+    }
+
+    private void BuildLaneChangeConnectionsForSegment(RoadSegmentV2 segment)
+    {
+        if (segment == null || !segment.AllowLaneChanges)
+            return;
+
+        BuildLaneChangeConnectionsForDirection(
+            segment.GetDrivingLanes(segment.StartNode, segment.EndNode),
+            segment
+        );
+
+        BuildLaneChangeConnectionsForDirection(
+            segment.GetDrivingLanes(segment.EndNode, segment.StartNode),
+            segment
+        );
+    }
+
+    private void BuildLaneChangeConnectionsForDirection(
+        List<RoadLaneDataV2> lanes,
+        RoadSegmentV2 segment)
+    {
+        if (lanes == null || lanes.Count < 2)
+            return;
+
+        for (int i = 0; i < lanes.Count - 1; i++)
+        {
+            RoadLaneDataV2 rightLane = lanes[i];
+            RoadLaneDataV2 leftLane = lanes[i + 1];
+
+            BuildBidirectionalLaneChangeSamples(rightLane, leftLane, segment);
+        }
+    }
+
+    private void BuildBidirectionalLaneChangeSamples(
+        RoadLaneDataV2 a,
+        RoadLaneDataV2 b,
+        RoadSegmentV2 segment)
+    {
+        if (a == null || b == null || segment == null)
+            return;
+
+        float laneLength = Vector3.Distance(a.start, a.end);
+        if (laneLength < 0.5f)
+            return;
+
+        float startDistance = Mathf.Max(0f, segment.NoLaneChangeNearStart);
+        float endDistance = Mathf.Max(startDistance, laneLength - segment.NoLaneChangeNearEnd);
+
+        if (endDistance <= startDistance)
+            return;
+
+        float step = Mathf.Max(0.4f, segment.LaneChangeStep);
+
+        for (float d = startDistance; d <= endDistance; d += step)
+        {
+            AddLaneChangeConnection(a, b, d, segment.LaneChangeLength, true);
+            AddLaneChangeConnection(b, a, d, segment.LaneChangeLength, false);
+        }
+    }
+
+    private void AddLaneChangeConnection(
+        RoadLaneDataV2 fromLane,
+        RoadLaneDataV2 toLane,
+        float fromDistance,
+        float laneChangeLength,
+        bool toLeft)
+    {
+        if (fromLane == null || toLane == null)
+            return;
+
+        float laneLength = Vector3.Distance(fromLane.start, fromLane.end);
+        float toDistance = Mathf.Clamp(fromDistance + Mathf.Max(0.2f, laneChangeLength), 0f, laneLength);
+
+        Vector3 fromDir = fromLane.DirectionVector.normalized;
+        Vector3 toDir = toLane.DirectionVector.normalized;
+
+        Vector3 p0 = fromLane.start + fromDir * fromDistance;
+        Vector3 p2 = toLane.start + toDir * toDistance;
+        Vector3 p1 = Vector3.Lerp(p0, p2, 0.5f);
+
+        RoadLaneConnectionV2 connection = new RoadLaneConnectionV2
+        {
+            fromLane = fromLane,
+            toLane = toLane,
+            connectionKind = RoadLaneConnectionV2.ConnectionKind.LaneChange,
+            movementType = toLeft
+                ? RoadLaneConnectionV2.MovementType.LaneChangeLeft
+                : RoadLaneConnectionV2.MovementType.LaneChangeRight,
+            fromDistanceOnLane = fromDistance,
+            toDistanceOnLane = toDistance,
+            turnScore = 0f
+        };
+
+        connection.curvePoints.Add(p0);
+        connection.curvePoints.Add(p1);
+        connection.curvePoints.Add(p2);
+
+        allConnections.Add(connection);
+        fromLane.outgoingConnections.Add(connection);
+        toLane.incomingConnections.Add(connection);
     }
 
     private void BuildBestConnectionsForIncomingLane(
