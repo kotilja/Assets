@@ -117,9 +117,9 @@ public class RoadNetworkV2 : MonoBehaviour
     }
 
     private void BuildBestConnectionsForIncomingLane(
-        RoadNodeV2 node,
-        RoadLaneDataV2 incomingLane,
-        List<RoadLaneDataV2> outgoingLanes)
+    RoadNodeV2 node,
+    RoadLaneDataV2 incomingLane,
+    List<RoadLaneDataV2> outgoingLanes)
     {
         if (incomingLane == null || outgoingLanes == null || outgoingLanes.Count == 0)
             return;
@@ -166,19 +166,87 @@ public class RoadNetworkV2 : MonoBehaviour
         RoadLaneDataV2 bestStraight = GetClosestLaneByIndex(straightCandidates, incomingLane.localLaneIndex);
         AddConnectionIfUnique(node, incomingLane, bestStraight);
 
-        // Правый поворот только с правой полосы
+        // Направо — только с крайней правой полосы
         if (incomingLane.localLaneIndex == rightmostIncomingIndex)
         {
             RoadLaneDataV2 bestRight = GetExtremeLaneByIndex(rightCandidates, preferHighestIndex: false);
             AddConnectionIfUnique(node, incomingLane, bestRight);
         }
 
-        // Левый поворот только с левой полосы
+        // Налево — только с крайней левой полосы
         if (incomingLane.localLaneIndex == leftmostIncomingIndex)
         {
             RoadLaneDataV2 bestLeft = GetExtremeLaneByIndex(leftCandidates, preferHighestIndex: true);
             AddConnectionIfUnique(node, incomingLane, bestLeft);
         }
+    }
+
+    private int GetDirectionalLaneCount(RoadLaneDataV2 lane)
+    {
+        if (lane == null || lane.ownerSegment == null)
+            return 1;
+
+        List<RoadLaneDataV2> lanes = lane.ownerSegment.GetDrivingLanes(lane.fromNode, lane.toNode);
+        return Mathf.Max(1, lanes.Count);
+    }
+
+    private RoadLaneDataV2 GetClosestLaneByIndex(List<RoadLaneDataV2> candidates, int targetIndex)
+    {
+        if (candidates == null || candidates.Count == 0)
+            return null;
+
+        RoadLaneDataV2 best = null;
+        float bestScore = float.MaxValue;
+
+        for (int i = 0; i < candidates.Count; i++)
+        {
+            RoadLaneDataV2 candidate = candidates[i];
+            if (candidate == null)
+                continue;
+
+            float score = Mathf.Abs(candidate.localLaneIndex - targetIndex);
+            if (score < bestScore)
+            {
+                bestScore = score;
+                best = candidate;
+            }
+        }
+
+        return best;
+    }
+
+    private RoadLaneDataV2 GetExtremeLaneByIndex(List<RoadLaneDataV2> candidates, bool preferHighestIndex)
+    {
+        if (candidates == null || candidates.Count == 0)
+            return null;
+
+        RoadLaneDataV2 best = null;
+
+        for (int i = 0; i < candidates.Count; i++)
+        {
+            RoadLaneDataV2 candidate = candidates[i];
+            if (candidate == null)
+                continue;
+
+            if (best == null)
+            {
+                best = candidate;
+                continue;
+            }
+
+            if (preferHighestIndex)
+            {
+                if (candidate.localLaneIndex > best.localLaneIndex)
+                    best = candidate;
+            }
+            else
+            {
+                if (candidate.localLaneIndex < best.localLaneIndex)
+                    best = candidate;
+            }
+        }
+
+        return best;
     }
 
     private int GetDirectionalLaneCount(RoadLaneDataV2 lane)
