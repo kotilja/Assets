@@ -582,6 +582,32 @@ public class RoadNetworkV2 : MonoBehaviour
         return CreateNode(position);
     }
 
+    public RoadNodeV2 GetNearestIntersectionNode(Vector3 position, float maxDistance)
+    {
+        position.z = 0f;
+
+        float bestDistance = maxDistance;
+        RoadNodeV2 bestNode = null;
+
+        foreach (RoadNodeV2 node in nodes)
+        {
+            if (node == null)
+                continue;
+
+            if (node.ConnectedSegments.Count <= 2)
+                continue;
+
+            float distance = Vector3.Distance(node.transform.position, position);
+            if (distance <= bestDistance)
+            {
+                bestDistance = distance;
+                bestNode = node;
+            }
+        }
+
+        return bestNode;
+    }
+
     public RoadNodeV2 CreateNode(Vector3 position)
     {
         EnsureRoots();

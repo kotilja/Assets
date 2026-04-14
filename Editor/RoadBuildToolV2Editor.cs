@@ -11,10 +11,10 @@ public class RoadBuildToolV2Editor : Editor
         DrawDefaultInspector();
 
         EditorGUILayout.Space(10f);
-        EditorGUILayout.HelpBox(
-            "ЛКМ в Scene View: поставить узел / создать сегмент. Shift + ЛКМ: удалить сегмент. Esc: завершить текущую цепочку.",
-            MessageType.Info
-        );
+        DrawModeButtons();
+
+        EditorGUILayout.Space(10f);
+        EditorGUILayout.HelpBox(GetHelpText(), MessageType.Info);
 
         if (GUILayout.Button("Сбросить текущую цепочку"))
         {
@@ -31,6 +31,54 @@ public class RoadBuildToolV2Editor : Editor
         }
     }
 
+    private void DrawModeButtons()
+    {
+        EditorGUILayout.LabelField("Быстрое переключение режима", EditorStyles.boldLabel);
+
+        EditorGUILayout.BeginHorizontal();
+
+        if (GUILayout.Button("Рисование"))
+        {
+            Tool.SetToolMode(RoadBuildToolV2.ToolMode.DrawRoad);
+            EditorUtility.SetDirty(Tool);
+            SceneView.RepaintAll();
+        }
+
+        if (GUILayout.Button("Удаление"))
+        {
+            Tool.SetToolMode(RoadBuildToolV2.ToolMode.DeleteRoad);
+            EditorUtility.SetDirty(Tool);
+            SceneView.RepaintAll();
+        }
+
+        if (GUILayout.Button("Перекрестки"))
+        {
+            Tool.SetToolMode(RoadBuildToolV2.ToolMode.JunctionControl);
+            EditorUtility.SetDirty(Tool);
+            SceneView.RepaintAll();
+        }
+
+        EditorGUILayout.EndHorizontal();
+    }
+
+    private string GetHelpText()
+    {
+        switch (Tool.CurrentToolMode)
+        {
+            case RoadBuildToolV2.ToolMode.DrawRoad:
+                return "Режим рисования: ЛКМ в Scene View ставит узел или создает сегмент. Esc завершает текущую цепочку.";
+
+            case RoadBuildToolV2.ToolMode.DeleteRoad:
+                return "Режим удаления: ЛКМ в Scene View удаляет ближайший сегмент дороги.";
+
+            case RoadBuildToolV2.ToolMode.JunctionControl:
+                return "Режим перекрестков: ЛКМ по существующему перекрестку переключает режим RightHandRule / TrafficLight.";
+
+            default:
+                return "-";
+        }
+    }
+
     private void OnSceneGUI()
     {
         if (!Tool.ToolEnabled || Tool.Network == null)
@@ -43,19 +91,17 @@ public class RoadBuildToolV2Editor : Editor
             HandleUtility.AddDefaultControl(controlId);
 
         Vector3 worldPosition = GetWorldPointOnPlane(e.mousePosition);
-        DrawPreview(worldPosition, e.shift);
+        DrawPreview(worldPosition);
 
         if (e.type == EventType.MouseDown && e.button == 0 && !e.alt)
         {
             Undo.IncrementCurrentGroup();
 
-            if (e.shift)
-                Tool.HandleDeleteClick(worldPosition);
-            else
-                Tool.HandleSceneClick(worldPosition);
+            Tool.HandleSceneClick(worldPosition);
 
             EditorUtility.SetDirty(Tool);
             EditorUtility.SetDirty(Tool.Network);
+            SceneView.RepaintAll();
             e.Use();
         }
 
@@ -63,25 +109,37 @@ public class RoadBuildToolV2Editor : Editor
         {
             Tool.ClearCurrentChain();
             EditorUtility.SetDirty(Tool);
+            SceneView.RepaintAll();
             e.Use();
         }
     }
 
-    private void DrawPreview(Vector3 worldPosition, bool deleteMode)
+    private void DrawPreview(Vector3 worldPosition)
     {
-        Handles.color = deleteMode ? Tool.DeletePreviewColor : Tool.PreviewColor;
-        Handles.DrawSolidDisc(worldPosition, Vector3.forward, 0.06f);
-
-        if (deleteMode)
+        switch (Tool.CurrentToolMode)
         {
-            Handles.DrawWireDisc(worldPosition, Vector3.forward, Tool.DeletePickDistance);
-            return;
-        }
+            case RoadBuildToolV2.ToolMode.DrawRoad:
+                Handles.color = Tool.PreviewColor;
+                Handles.DrawSolidDisc(worldPosition, Vector3.forward, 0.06f);
 
-        if (Tool.HasCurrentStartNode)
-        {
-            Handles.DrawDottedLine(Tool.CurrentStartPosition, worldPosition, 4f);
-            Handles.DrawWireDisc(Tool.CurrentStartPosition, Vector3.forward, Tool.SnapDistance);
+                if (Tool.HasCurrentStartNode)
+                {
+                    Handles.DrawDottedLine(Tool.CurrentStartPosition, worldPosition, 4f);
+                    Handles.DrawWireDisc(Tool.CurrentStartPosition, Vector3.forward, Tool.SnapDistance);
+                }
+                break;
+
+            case RoadBuildToolV2.ToolMode.DeleteRoad:
+                Handles.color = Tool.DeletePreviewColor;
+                Handles.DrawSolidDisc(worldPosition, Vector3.forward, 0.06f);
+                Handles.DrawWireDisc(worldPosition, Vector3.forward, Tool.DeletePickDistance);
+                break;
+
+            case RoadBuildToolV2.ToolMode.JunctionControl:
+                Handles.color = Tool.JunctionPreviewColor;
+                Handles.DrawSolidDisc(worldPosition, Vector3.forward, 0.06f);
+                Handles.DrawWireDisc(worldPosition, Vector3.forward, Tool.JunctionPickDistance);
+                break;
         }
     }
 
