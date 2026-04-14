@@ -14,6 +14,8 @@ public class RoadVehicleAgentV2 : MonoBehaviour
     [SerializeField] private float lookAheadDistance = 0.25f;
     [SerializeField] private float safeDistance = 0.45f;
     [SerializeField] private float laneCheckWidth = 0.18f;
+    [SerializeField] private float vehicleHalfLengthMin = 0.18f;
+    [SerializeField] private float stopLineGap = 0.03f;
 
     private static readonly List<RoadVehicleAgentV2> activeVehicles = new List<RoadVehicleAgentV2>();
 
@@ -109,6 +111,7 @@ public class RoadVehicleAgentV2 : MonoBehaviour
             return desiredMove;
 
         float allowed = desiredMove;
+        float myHalfLength = GetProjectedHalfLengthAlong(moveDirection);
 
         for (int i = 0; i < activeVehicles.Count; i++)
         {
@@ -127,7 +130,9 @@ public class RoadVehicleAgentV2 : MonoBehaviour
             if (lateral > laneCheckWidth)
                 continue;
 
-            float freeSpace = forward - safeDistance;
+            float otherHalfLength = other.GetProjectedHalfLengthAlong(moveDirection);
+            float freeSpace = forward - myHalfLength - otherHalfLength - safeDistance;
+
             if (freeSpace < allowed)
                 allowed = Mathf.Max(0f, freeSpace);
         }
@@ -383,12 +388,72 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         if (fromLane != null && fromLane.ownerSegment != null)
             offset = fromLane.ownerSegment.StopLineOffset;
 
-        if (fromLane == null)
-            return fromAnchor - inDir.normalized * offset;
+        Vector3 stopLinePoint;
 
-        // Ждём в той же точке, где рисуется стоп-линия:
-        // lane.end - direction * stopLineOffset
-        return fromLane.end - inDir.normalized * offset;
+        if (fromLane == null)
+        {
+            stopLinePoint = fromAnchor - inDir.normalized * offset;
+        }
+        else
+        {
+            // Точка, где визуально рисуется стоп-линия
+            stopLinePoint = fromLane.end - inDir.normalized * offset;
+        }
+
+        float vehicleFrontOffset = GetProjectedHalfLengthAlong(inDir) + stopLineGap;
+        return stopLinePoint - inDir.normalized * vehicleFrontOffset;
+    }
+
+    private float GetProjectedHalfLengthAlong(Vector3 direction)
+    {
+        if (direction.sqrMagnitude < 0.0001f)
+            return vehicleHalfLengthMin;
+
+        direction.Normalize();
+
+        float best = 0f;
+        bool found = false;
+
+        Renderer[] renderers = GetComponentsInChildren<Renderer>();
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            Renderer r = renderers[i];
+            if (r == null || !r.enabled)
+                continue;
+
+            Bounds b = r.bounds;
+            float projected =
+                Mathf.Abs(direction.x) * b.extents.x +
+                Mathf.Abs(direction.y) * b.extents.y;
+
+            if (projected > best)
+                best = projected;
+
+            found = true;
+        }
+
+        Collider2D[] colliders2D = GetComponentsInChildren<Collider2D>();
+        for (int i = 0; i < colliders2D.Length; i++)
+        {
+            Collider2D c = colliders2D[i];
+            if (c == null || !c.enabled)
+                continue;
+
+            Bounds b = c.bounds;
+            float projected =
+                Mathf.Abs(direction.x) * b.extents.x +
+                Mathf.Abs(direction.y) * b.extents.y;
+
+            if (projected > best)
+                best = projected;
+
+            found = true;
+        }
+
+        if (!found)
+            return vehicleHalfLengthMin;
+
+        return Mathf.Max(best, vehicleHalfLengthMin);
     }
 
     private void GetNodeHalfExtents(RoadNodeV2 node, out float halfX, out float halfY)
