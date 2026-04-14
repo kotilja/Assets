@@ -135,56 +135,129 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         return allowed;
     }
 
-    private void BuildWaypointPath(RoadLaneDataV2 initialLane, List<RoadLaneDataV2> lanePath)
+    private void BuildWaypointPath(List<RoadLaneDataV2> lanePath)
     {
-        AddPointIfFar(initialLane.start);
+        if (lanePath == null || lanePath.Count == 0)
+            return;
 
-        if (initialLane != null && lanePath.Count > 0 && AreSameDirectionalSegmentLane(initialLane, lanePath[0]) && initialLane != lanePath[0])
-        {
-            List<Vector3> firstLaneChange = BuildLaneChangeWithinSegment(initialLane, lanePath[0]);
-            for (int i = 0; i < firstLaneChange.Count; i++)
-                AddPointIfFar(firstLaneChange[i]);
-        }
+        AddPointIfFar(lanePath[0].start);
+
+        RoadLaneDataV2 activeLane = lanePath[0];
 
         for (int i = 0; i < lanePath.Count; i++)
         {
-            RoadLaneDataV2 currentLane = lanePath[i];
             bool hasNext = i < lanePath.Count - 1;
 
             if (!hasNext)
             {
-                AddPointIfFar(currentLane.end);
+                AddPointIfFar(activeLane.end);
                 continue;
             }
 
             RoadLaneDataV2 nextLane = lanePath[i + 1];
 
-            if (AreSameDirectionalSegmentLane(currentLane, nextLane))
+            float signedAngle = Vector3.SignedAngle(
+                activeLane.DirectionVector.normalized,
+                nextLane.DirectionVector.normalized,
+                Vector3.forward
+            );
+
+            RoadLaneConnectionV2.MovementType movementType = GetMovementType(signedAngle);
+
+            RoadLaneDataV2 requiredTurnLane = GetRequiredTurnLane(activeLane, movementType);
+
+            if (requiredTurnLane != null && requiredTurnLane != activeLane)
             {
-                List<Vector3> internalLaneChange = BuildLaneChangeWithinSegment(currentLane, nextLane);
+                List<Vector3> laneChangePoints = BuildMidSegmentLaneChange(activeLane, requiredTurnLane);
 
-                for (int j = 0; j < internalLaneChange.Count; j++)
-                    AddPointIfFar(internalLaneChange[j]);
+                for (int j = 0; j < laneChangePoints.Count; j++)
+                    AddPointIfFar(laneChangePoints[j]);
 
-                continue;
+                activeLane = requiredTurnLane;
             }
 
-            RoadLaneConnectionV2 connection = FindConnection(currentLane, nextLane);
+            RoadLaneConnectionV2 connection = FindConnection(activeLane, nextLane);
 
             int gateIndex = waypoints.Count;
 
             GateInfo gate = connection != null
                 ? BuildGateFromRealConnection(connection)
-                : BuildGateFromSyntheticTurn(currentLane, nextLane);
+                : BuildGateFromSyntheticTurn(activeLane, nextLane);
 
             if (gate != null)
                 gatedWaypointIndices[gateIndex] = gate;
 
-            List<Vector3> turnPoints = BuildNodeAnchoredTurn(currentLane, nextLane);
+            List<Vector3> turnPoints = BuildNodeAnchoredTurn(activeLane, nextLane);
 
             for (int j = 0; j < turnPoints.Count; j++)
                 AddPointIfFar(turnPoints[j]);
+
+            activeLane = nextLane;
         }
+    }
+
+    private RoadLaneDataV2 GetRequiredTurnLane(
+    RoadLaneDataV2 currentLane,
+    RoadLaneConnectionV2.MovementType movementType)
+    {
+        if (currentLane == null || currentLane.ownerSegment == null)
+            return currentLane;
+
+        List<RoadLaneDataV2> sameDirectionLanes = currentLane.ownerSegment.GetDrivingLanes(
+            currentLane.fromNode,
+            currentLane.toNode
+        );
+
+        if (sameDirectionLanes == null || sameDirectionLanes.Count <= 1)
+            return currentLane;
+
+        RoadLaneDataV2 best = currentLane;
+
+        switch (movementType)
+        {
+            case RoadLaneConnectionV2.MovementType.Left:
+                for (int i = 0; i < sameDirectionLanes.Count; i++)
+                {
+                    RoadLaneDataV2 lane = sameDirectionLanes[i];
+                    if (lane != null && lane.localLaneIndex > best.localLaneIndex)
+                        best = lane;
+                }
+                return best;
+
+            case RoadLaneConnectionV2.MovementType.Right:
+                for (int i = 0; i < sameDirectionLanes.Count; i++)
+                {
+                    RoadLaneDataV2 lane = sameDirectionLanes[i];
+                    if (lane != null && lane.localLaneIndex < best.localLaneIndex)
+                        best = lane;
+                }
+                return best;
+
+            case RoadLaneConnectionV2.MovementType.Straight:
+            default:
+                return currentLane;
+        }
+    }
+
+    private List<Vector3> BuildMidSegmentLaneChange(RoadLaneDataV2 fromLane, RoadLaneDataV2 toLane)
+    {
+        List<Vector3> points = new List<Vector3>();
+
+        if (fromLane == null || toLane == null)
+            return points;
+
+        if (fromLane.ownerSegment != toLane.ownerSegment)
+            return points;
+
+        Vector3 p0 = Vector3.Lerp(fromLane.start, fromLane.end, 0.40f);
+        Vector3 p2 = Vector3.Lerp(toLane.start, toLane.end, 0.72f);
+        Vector3 p1 = Vector3.Lerp(p0, p2, 0.5f);
+
+        points.Add(p0);
+        AddPointIfFar(points, p1);
+        AddPointIfFar(points, p2);
+
+        return points;
     }
 
     private bool AreSameDirectionalSegmentLane(RoadLaneDataV2 a, RoadLaneDataV2 b)
