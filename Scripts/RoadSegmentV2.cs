@@ -82,13 +82,17 @@ public class RoadSegmentV2 : MonoBehaviour
         RefreshVisual();
     }
 
-   private void Awake()
-{
-    RegisterToNodes();
-    RefreshVisual();
-}
+    private void Awake()
+    {
+        RegisterToNodes();
+    }
 
-private void OnValidate()
+    private void Start()
+    {
+        RefreshVisual();
+    }
+
+    private void OnValidate()
 {
 #if UNITY_EDITOR
     if (!UnityEditor.EditorApplication.isPlayingOrWillChangePlaymode)
@@ -156,10 +160,10 @@ private void OnDestroy()
     }
 
     private void RebuildLaneVisualsAndData(Vector3 start, Vector3 end)
-{
-    EnsureLaneObjectsCount(TotalLaneCount);
-    EnsureArrowObjectsCount(TotalLaneCount);
-    EnsureLaneDataCount(TotalLaneCount);
+    {
+        EnsureLaneObjectsCount(TotalLaneCount);
+        EnsureArrowObjectsCount(TotalLaneCount);
+        EnsureLaneDataCount(TotalLaneCount);
 
         Vector3 segmentVector = end - start;
         float segmentLength = segmentVector.magnitude;
@@ -236,33 +240,20 @@ private void OnDestroy()
             RoadLaneV2 laneVisual = laneVisuals[laneCounter];
             laneVisual.Initialize(i, RoadLaneV2.LaneDirection.Backward);
             laneVisual.UpdateVisual(
-           trimmedForwardEnd,
-           trimmedForwardStart,
-          laneLineWidth,
-           backwardLaneColor,
-           10
+                trimmedForwardEnd,
+                trimmedForwardStart,
+                laneLineWidth,
+                backwardLaneColor,
+                10
             );
 
-
-
             UpdateArrowVisual(
-                 arrowRenderers[laneCounter],
-                  trimmedForwardEnd,
-                  trimmedForwardStart,
-                 backwardLaneColor,
-                  $"Arrow_Backward_{i}"
-                );
-
-            UpdateStopLineVisuals(
-                     start,
-                     end,
-                     direction,
-                    normal,
-                     startCut,
-                     endCut,
-                     rightEdgeCenter,
-                     leftEdgeCenter
-                );
+                arrowRenderers[laneCounter],
+                trimmedForwardEnd,
+                trimmedForwardStart,
+                backwardLaneColor,
+                $"Arrow_Backward_{i}"
+            );
 
             RoadLaneDataV2 lane = laneData[laneCounter];
             lane.laneId = globalLaneIdSeed + laneCounter;
@@ -278,6 +269,17 @@ private void OnDestroy()
 
             laneCounter++;
         }
+
+        UpdateStopLineVisuals(
+            start,
+            end,
+            direction,
+            normal,
+            startCut,
+            endCut,
+            rightEdgeCenter,
+            leftEdgeCenter
+        );
     }
 
     private void UpdateStopLineVisuals(
