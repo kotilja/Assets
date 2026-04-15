@@ -51,8 +51,8 @@ public class RoadNodeSignalV2 : MonoBehaviour
     [SerializeField] private float bodyHeight = 0.34f;
     [SerializeField] private float lampSize = 0.16f;
     [SerializeField] private float signalScale = 5f;
-    [SerializeField] private float signalSideOffset = 0.28f;
-    [SerializeField] private float extraRightOffset = 0.12f;
+    [SerializeField] private float signalSideOffset = 0.08f;
+    [SerializeField] private float extraRightOffset = 0.02f;
     [SerializeField] private float signalBackOffset = 0.08f;
     [SerializeField] private int bodySortingOrder = 60;
     [SerializeField] private int lampSortingOrder = 61;
@@ -295,7 +295,7 @@ public class RoadNodeSignalV2 : MonoBehaviour
 
         float roadHalfWidth = segment != null ? segment.TotalRoadWidth * 0.5f : 0f;
         float scale = Mathf.Max(signalScale, 0.01f);
-        float sideOffset = roadHalfWidth + signalSideOffset + bodyWidth * scale * 0.5f + extraRightOffset;
+        float sideOffset = roadHalfWidth + signalSideOffset + extraRightOffset;
 
         Vector3 pos =
             stopCenter
