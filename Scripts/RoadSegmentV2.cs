@@ -26,6 +26,15 @@ public class RoadSegmentV2 : MonoBehaviour
     [SerializeField] private float stopLineWidth = 0.12f;
     [SerializeField] private int stopLineSortingOrder = 20;
 
+    [Header("Lane markings")]
+    [SerializeField] private Color laneMarkingColor = new Color(0.85f, 0.92f, 1f, 0.95f);
+    [SerializeField] private Color centerSeparatorColor = new Color(1f, 0.92f, 0.2f, 0.95f);
+    [SerializeField] private float laneMarkingWidth = 0.05f;
+    [SerializeField] private float laneMarkingDashLength = 0.42f;
+    [SerializeField] private float laneMarkingGapLength = 0.24f;
+    [SerializeField] private int laneMarkingSortingOrder = 12;
+    [SerializeField] private int centerSeparatorSortingOrder = 13;
+
     [Header("Arrow visuals")]
     [SerializeField] private float arrowLengthScale = 0.7f;
     [SerializeField] private float arrowHeightScale = 0.35f;
@@ -173,7 +182,7 @@ private void OnDestroy()
 
     private void RebuildLaneVisualsAndData(Vector3 start, Vector3 end)
     {
-        EnsureLaneObjectsCount(TotalLaneCount);
+        EnsureLaneObjectsCount(GetLaneMarkingCount());
         EnsureArrowObjectsCount(TotalLaneCount);
         EnsureLaneDataCount(TotalLaneCount);
 
@@ -191,10 +200,6 @@ private void OnDestroy()
         int laneCounter = 0;
         int globalLaneIdSeed = id * 100;
 
-        // Правостороннее движение:
-        // forward (start -> end) располагаем справа от направления
-        // backward (end -> start) располагаем слева от направления start -> end
-
         float rightEdgeCenter = -TotalRoadWidth * 0.5f + laneWidth * 0.5f;
         float leftEdgeCenter = TotalRoadWidth * 0.5f - laneWidth * 0.5f;
 
@@ -206,16 +211,6 @@ private void OnDestroy()
 
             Vector3 laneStart = rawLaneStart + direction * startCut;
             Vector3 laneEnd = rawLaneEnd - direction * endCut;
-
-            RoadLaneV2 laneVisual = laneVisuals[laneCounter];
-            laneVisual.Initialize(i, RoadLaneV2.LaneDirection.Forward);
-            laneVisual.UpdateVisual(
-                laneStart,
-                laneEnd,
-                laneLineWidth,
-                forwardLaneColor,
-                10
-            );
 
             UpdateArrowVisual(
                 arrowRenderers[laneCounter],
@@ -249,16 +244,6 @@ private void OnDestroy()
             Vector3 trimmedForwardStart = rawStart + direction * startCut;
             Vector3 trimmedForwardEnd = rawEnd - direction * endCut;
 
-            RoadLaneV2 laneVisual = laneVisuals[laneCounter];
-            laneVisual.Initialize(i, RoadLaneV2.LaneDirection.Backward);
-            laneVisual.UpdateVisual(
-                trimmedForwardEnd,
-                trimmedForwardStart,
-                laneLineWidth,
-                backwardLaneColor,
-                10
-            );
-
             UpdateArrowVisual(
                 arrowRenderers[laneCounter],
                 trimmedForwardEnd,
@@ -282,6 +267,17 @@ private void OnDestroy()
             laneCounter++;
         }
 
+        UpdateLaneMarkings(
+            start,
+            end,
+            direction,
+            normal,
+            startCut,
+            endCut,
+            rightEdgeCenter,
+            leftEdgeCenter
+        );
+
         UpdateStopLineVisuals(
             start,
             end,
@@ -292,6 +288,112 @@ private void OnDestroy()
             rightEdgeCenter,
             leftEdgeCenter
         );
+    }
+
+    private int GetLaneMarkingCount()
+    {
+        int count = 0;
+
+        if (forwardLanes > 1)
+            count += forwardLanes - 1;
+
+        if (forwardLanes > 0 && backwardLanes > 0)
+            count += 1;
+
+        if (backwardLanes > 1)
+            count += backwardLanes - 1;
+
+        return Mathf.Max(0, count);
+    }
+
+    private void UpdateLaneMarkings(
+        Vector3 start,
+        Vector3 end,
+        Vector3 direction,
+        Vector3 normal,
+        float startCut,
+        float endCut,
+        float rightEdgeCenter,
+        float leftEdgeCenter)
+    {
+        int markingIndex = 0;
+
+        float startRestricted = Mathf.Max(0f, noLaneChangeNearStart);
+        float endRestricted = Mathf.Max(0f, noLaneChangeNearEnd);
+
+        for (int i = 0; i < forwardLanes - 1; i++)
+        {
+            float offset = rightEdgeCenter + (i + 0.5f) * laneWidth;
+
+            Vector3 a = start + normal * offset + direction * startCut;
+            Vector3 b = end + normal * offset - direction * endCut;
+
+            RoadLaneV2 marking = laneVisuals[markingIndex];
+            marking.Initialize(i, RoadLaneV2.LaneDirection.Forward);
+            marking.UpdateRestrictedDashedVisual(
+                a,
+                b,
+                laneMarkingWidth,
+                laneMarkingColor,
+                laneMarkingSortingOrder,
+                startRestricted,
+                endRestricted,
+                laneMarkingDashLength,
+                laneMarkingGapLength
+            );
+
+            markingIndex++;
+        }
+
+        if (forwardLanes > 0 && backwardLanes > 0)
+        {
+            float centerOffset = -TotalRoadWidth * 0.5f + forwardLanes * laneWidth;
+
+            Vector3 a = start + normal * centerOffset + direction * startCut;
+            Vector3 b = end + normal * centerOffset - direction * endCut;
+
+            RoadLaneV2 marking = laneVisuals[markingIndex];
+            marking.Initialize(0, RoadLaneV2.LaneDirection.Forward);
+            marking.UpdateVisual(
+                a,
+                b,
+                laneMarkingWidth,
+                centerSeparatorColor,
+                centerSeparatorSortingOrder
+            );
+
+            markingIndex++;
+        }
+
+        for (int i = 0; i < backwardLanes - 1; i++)
+        {
+            float offset = leftEdgeCenter - (i + 0.5f) * laneWidth;
+
+            Vector3 a = start + normal * offset + direction * startCut;
+            Vector3 b = end + normal * offset - direction * endCut;
+
+            RoadLaneV2 marking = laneVisuals[markingIndex];
+            marking.Initialize(i, RoadLaneV2.LaneDirection.Backward);
+            marking.UpdateRestrictedDashedVisual(
+                a,
+                b,
+                laneMarkingWidth,
+                laneMarkingColor,
+                laneMarkingSortingOrder,
+                startRestricted,
+                endRestricted,
+                laneMarkingDashLength,
+                laneMarkingGapLength
+            );
+
+            markingIndex++;
+        }
+
+        for (int i = markingIndex; i < laneVisuals.Count; i++)
+        {
+            if (laneVisuals[i] != null)
+                laneVisuals[i].Hide();
+        }
     }
 
     private void UpdateStopLineVisuals(
