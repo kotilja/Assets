@@ -23,6 +23,7 @@ public class RoadLaneConnectionV2
     public RoadLaneDataV2 toLane;
 
     public ConnectionKind connectionKind;
+    public bool isManual;
 
     public RoadNodeV2 junctionNode;
     public Vector3 junctionPoint;

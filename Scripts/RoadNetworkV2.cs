@@ -25,6 +25,13 @@ public class RoadNetworkV2 : MonoBehaviour
         public float newSegmentT;
     }
 
+    [System.Serializable]
+private class ManualLaneConnectionProfile
+{
+    public int fromLaneId;
+    public List<int> toLaneIds = new List<int>();
+}
+
     [SerializeField] private Transform nodesRoot;
     [SerializeField] private Transform segmentsRoot;
 
@@ -34,6 +41,11 @@ public class RoadNetworkV2 : MonoBehaviour
     [Header("Generated lane graph")]
     [SerializeField] private List<RoadLaneDataV2> allLanes = new List<RoadLaneDataV2>();
     [SerializeField] private List<RoadLaneConnectionV2> allConnections = new List<RoadLaneConnectionV2>();
+
+    [Header("Manual lane connections")]
+    [SerializeField] private List<ManualLaneConnectionProfile> manualLaneConnectionProfiles = new List<ManualLaneConnectionProfile>();
+
+
 
     [Header("Connection generation")]
     [SerializeField] private float straightAngleThreshold = 30f;
@@ -161,19 +173,21 @@ public class RoadNetworkV2 : MonoBehaviour
         }
 
         foreach (RoadNodeV2 node in nodes)
-        {
-            if (node == null)
-                continue;
+{
+    if (node == null)
+        continue;
 
-            if (!incomingByNode.TryGetValue(node, out List<RoadLaneDataV2> incoming))
-                continue;
+    if (!incomingByNode.TryGetValue(node, out List<RoadLaneDataV2> incoming))
+        continue;
 
-            if (!outgoingByNode.TryGetValue(node, out List<RoadLaneDataV2> outgoing))
-                continue;
+    if (!outgoingByNode.TryGetValue(node, out List<RoadLaneDataV2> outgoing))
+        continue;
 
-            foreach (RoadLaneDataV2 inLane in incoming)
-                BuildBestConnectionsForIncomingLane(node, inLane, outgoing);
-        }
+    foreach (RoadLaneDataV2 inLane in incoming)
+        BuildBestConnectionsForIncomingLane(node, inLane, outgoing);
+}
+
+ApplyManualLaneConnectionProfiles();
     }
 
     private void BuildLaneChangeConnectionsForSegment(RoadSegmentV2 segment)
@@ -493,6 +507,168 @@ private RoadLaneDataV2 GetLeftTurnCandidate(
         fromLane.outgoingConnections.Add(connection);
         toLane.incomingConnections.Add(connection);
     }
+public bool HasManualConnectionsForLane(int fromLaneId)
+{
+    ManualLaneConnectionProfile profile = GetManualProfile(fromLaneId);
+    return profile != null && profile.toLaneIds.Count > 0;
+}
+
+public bool HasManualConnection(int fromLaneId, int toLaneId)
+{
+    ManualLaneConnectionProfile profile = GetManualProfile(fromLaneId);
+    return profile != null && profile.toLaneIds.Contains(toLaneId);
+}
+
+public void ToggleManualLaneConnection(int fromLaneId, int toLaneId)
+{
+    if (fromLaneId <= 0 || toLaneId <= 0)
+        return;
+
+    ManualLaneConnectionProfile profile = GetOrCreateManualProfile(fromLaneId);
+
+    if (profile.toLaneIds.Contains(toLaneId))
+        profile.toLaneIds.Remove(toLaneId);
+    else
+        profile.toLaneIds.Add(toLaneId);
+
+    if (profile.toLaneIds.Count == 0)
+        manualLaneConnectionProfiles.Remove(profile);
+
+    RefreshAll();
+}
+
+public void ClearManualConnectionsForLane(int fromLaneId)
+{
+    ManualLaneConnectionProfile profile = GetManualProfile(fromLaneId);
+    if (profile == null)
+        return;
+
+    manualLaneConnectionProfiles.Remove(profile);
+    RefreshAll();
+}
+
+public RoadLaneDataV2 FindLaneById(int laneId)
+{
+    for (int i = 0; i < allLanes.Count; i++)
+    {
+        RoadLaneDataV2 lane = allLanes[i];
+        if (lane != null && lane.laneId == laneId)
+            return lane;
+    }
+
+    return null;
+}
+
+private ManualLaneConnectionProfile GetManualProfile(int fromLaneId)
+{
+    for (int i = 0; i < manualLaneConnectionProfiles.Count; i++)
+    {
+        ManualLaneConnectionProfile profile = manualLaneConnectionProfiles[i];
+        if (profile != null && profile.fromLaneId == fromLaneId)
+            return profile;
+    }
+
+    return null;
+}
+
+private ManualLaneConnectionProfile GetOrCreateManualProfile(int fromLaneId)
+{
+    ManualLaneConnectionProfile profile = GetManualProfile(fromLaneId);
+    if (profile != null)
+        return profile;
+
+    profile = new ManualLaneConnectionProfile
+    {
+        fromLaneId = fromLaneId
+    };
+
+    manualLaneConnectionProfiles.Add(profile);
+    return profile;
+}
+
+private void ApplyManualLaneConnectionProfiles()
+{
+    for (int i = 0; i < manualLaneConnectionProfiles.Count; i++)
+    {
+        ManualLaneConnectionProfile profile = manualLaneConnectionProfiles[i];
+        if (profile == null)
+            continue;
+
+        RoadLaneDataV2 fromLane = FindLaneById(profile.fromLaneId);
+        if (fromLane == null)
+            continue;
+
+        RemoveJunctionConnectionsFromLane(fromLane);
+
+        for (int j = 0; j < profile.toLaneIds.Count; j++)
+        {
+            RoadLaneDataV2 toLane = FindLaneById(profile.toLaneIds[j]);
+            if (toLane == null)
+                continue;
+
+            if (fromLane.toNode == null || fromLane.toNode != toLane.fromNode)
+                continue;
+
+            AddManualConnection(fromLane.toNode, fromLane, toLane);
+        }
+    }
+}
+
+private void RemoveJunctionConnectionsFromLane(RoadLaneDataV2 fromLane)
+{
+    if (fromLane == null)
+        return;
+
+    for (int i = fromLane.outgoingConnections.Count - 1; i >= 0; i--)
+    {
+        RoadLaneConnectionV2 connection = fromLane.outgoingConnections[i];
+        if (connection == null)
+            continue;
+
+        if (connection.connectionKind != RoadLaneConnectionV2.ConnectionKind.Junction)
+            continue;
+
+        fromLane.outgoingConnections.RemoveAt(i);
+
+        if (connection.toLane != null)
+            connection.toLane.incomingConnections.Remove(connection);
+
+        allConnections.Remove(connection);
+    }
+}
+
+private void AddManualConnection(RoadNodeV2 node, RoadLaneDataV2 fromLane, RoadLaneDataV2 toLane)
+{
+    if (node == null || fromLane == null || toLane == null)
+        return;
+
+    foreach (RoadLaneConnectionV2 existing in fromLane.outgoingConnections)
+    {
+        if (existing != null && existing.toLane == toLane)
+            return;
+    }
+
+    float turnScore = CalculateTurnScore(fromLane, toLane);
+    RoadLaneConnectionV2.MovementType movementType = GetMovementType(turnScore);
+
+    RoadLaneConnectionV2 connection = new RoadLaneConnectionV2
+    {
+        fromLane = fromLane,
+        toLane = toLane,
+        connectionKind = RoadLaneConnectionV2.ConnectionKind.Junction,
+        isManual = true,
+        junctionNode = node,
+        junctionPoint = node.transform.position,
+        turnScore = turnScore,
+        movementType = movementType,
+        curvePoints = BuildConnectionCurvePoints(fromLane, toLane, node.transform.position)
+    };
+
+    allConnections.Add(connection);
+    fromLane.outgoingConnections.Add(connection);
+    toLane.incomingConnections.Add(connection);
+}
+
 
     private float CalculateTurnScore(RoadLaneDataV2 fromLane, RoadLaneDataV2 toLane)
     {
