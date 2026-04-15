@@ -20,7 +20,6 @@ public class RoadSegmentV2 : MonoBehaviour
     [SerializeField] private Color roadColor = new Color(0.18f, 0.18f, 0.18f, 1f);
     [SerializeField] private Color forwardLaneColor = new Color(0.75f, 0.9f, 1f, 1f);
     [SerializeField] private Color backwardLaneColor = new Color(1f, 0.85f, 0.75f, 1f);
-    [SerializeField] private float laneLineWidth = 0.08f;
     [SerializeField] private bool showLaneArrows = true;
     [SerializeField] private Color stopLineColor = new Color(1f, 1f, 1f, 0.95f);
     [SerializeField] private float stopLineWidth = 0.12f;
@@ -214,12 +213,12 @@ private void OnDestroy()
             }
 
             UpdateArrowVisual(
-                arrowRenderers[laneCounter],
-                laneStart,
-                laneEnd,
+                arrowRenderer,
+                lane.start,
+                lane.end,
                 guidanceArrowColor,
-                $"Arrow_Forward_{i}",
-                GetArrowSprite(1)
+                $"Arrow_{lane.direction}_{lane.localLaneIndex}",
+                GetArrowSprite(movementMask)
             );
         }
 
@@ -300,10 +299,10 @@ private void OnDestroy()
 
             UpdateArrowVisual(
                 arrowRenderers[laneCounter],
-                trimmedForwardEnd,
-                trimmedForwardStart,
+                laneStart,
+                laneEnd,
                 guidanceArrowColor,
-                $"Arrow_Backward_{i}",
+                $"Arrow_Forward_{i}",
                 GetArrowSprite(1)
             );
 
@@ -335,8 +334,9 @@ private void OnDestroy()
                 arrowRenderers[laneCounter],
                 trimmedForwardEnd,
                 trimmedForwardStart,
-                backwardLaneColor,
-                $"Arrow_Backward_{i}"
+                guidanceArrowColor,
+                $"Arrow_Backward_{i}",
+                GetArrowSprite(1)
             );
 
             RoadLaneDataV2 lane = laneData[laneCounter];
