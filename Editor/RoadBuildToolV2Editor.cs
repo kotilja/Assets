@@ -339,27 +339,95 @@ public class RoadBuildToolV2Editor : Editor
 
 
     private void DrawLaneConnectionOverlay()
+    {
+        if (Tool.CurrentToolMode != RoadBuildToolV2.ToolMode.LaneConnections)
+            return;
+
+        if (Tool.Network != null)
         {
-            if (Tool.CurrentToolMode != RoadBuildToolV2.ToolMode.LaneConnections)
-                return;
-
-            if (Tool.SelectedFromLane != null)
+            for (int i = 0; i < Tool.Network.AllConnections.Count; i++)
             {
-                Handles.color = new Color(0.2f, 1f, 1f, 1f);
-                Handles.DrawLine(Tool.SelectedFromLane.start, Tool.SelectedFromLane.end);
-                Handles.DrawWireDisc(Tool.SelectedFromLane.MidPoint, Vector3.forward, 0.10f);
-            }
+                RoadLaneConnectionV2 connection = Tool.Network.AllConnections[i];
+                if (connection == null || !connection.IsValid)
+                    continue;
 
-            if (Tool.SelectedToLane != null)
-            {
-                Handles.color = Tool.SelectedManualConnectionExists()
+                if (connection.connectionKind != RoadLaneConnectionV2.ConnectionKind.Junction)
+                    continue;
+
+                if (!connection.isManual)
+                    continue;
+
+                bool isSelected =
+                    Tool.SelectedFromLane != null &&
+                    Tool.SelectedToLane != null &&
+                    connection.fromLane == Tool.SelectedFromLane &&
+                    connection.toLane == Tool.SelectedToLane;
+
+                Handles.color = isSelected
                     ? new Color(0.2f, 1f, 0.2f, 1f)
-                    : new Color(1f, 0.5f, 0.2f, 1f);
+                    : new Color(0.2f, 0.9f, 1f, 0.95f);
 
-                Handles.DrawLine(Tool.SelectedToLane.start, Tool.SelectedToLane.end);
-                Handles.DrawWireDisc(Tool.SelectedToLane.MidPoint, Vector3.forward, 0.10f);
+                Vector3[] points = GetConnectionDrawPoints(connection);
+                if (points.Length >= 2)
+                    Handles.DrawAAPolyLine(4f, points);
+
+                if (points.Length > 0)
+                {
+                    Handles.DrawSolidDisc(points[0], Vector3.forward, 0.035f);
+                    Handles.DrawSolidDisc(points[points.Length - 1], Vector3.forward, 0.035f);
+                }
             }
         }
+
+        if (Tool.SelectedFromLane != null)
+        {
+            Handles.color = new Color(1f, 0.85f, 0.2f, 1f);
+            Handles.DrawLine(Tool.SelectedFromLane.start, Tool.SelectedFromLane.end);
+            Handles.DrawWireDisc(Tool.SelectedFromLane.MidPoint, Vector3.forward, 0.10f);
+        }
+
+        if (Tool.SelectedToLane != null)
+        {
+            Handles.color = Tool.SelectedManualConnectionExists()
+                ? new Color(0.2f, 1f, 0.2f, 1f)
+                : new Color(1f, 0.5f, 0.2f, 1f);
+
+            Handles.DrawLine(Tool.SelectedToLane.start, Tool.SelectedToLane.end);
+            Handles.DrawWireDisc(Tool.SelectedToLane.MidPoint, Vector3.forward, 0.10f);
+        }
+    }
+
+    private Vector3[] GetConnectionDrawPoints(RoadLaneConnectionV2 connection)
+    {
+        if (connection == null)
+            return new Vector3[0];
+
+        if (connection.curvePoints != null && connection.curvePoints.Count >= 2)
+        {
+            Vector3[] result = new Vector3[connection.curvePoints.Count];
+
+            for (int i = 0; i < connection.curvePoints.Count; i++)
+            {
+                Vector3 p = connection.curvePoints[i];
+                p.z = 0f;
+                result[i] = p;
+            }
+
+            return result;
+        }
+
+        if (connection.fromLane != null && connection.toLane != null)
+        {
+            return new[]
+            {
+            connection.fromLane.end,
+            connection.toLane.start
+        };
+        }
+
+        return new Vector3[0];
+    }
+
     private string GetLaneLabel(RoadLaneDataV2 lane)
     {
         if (lane == null)
