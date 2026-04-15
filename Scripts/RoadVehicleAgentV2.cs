@@ -36,6 +36,7 @@ public class RoadVehicleAgentV2 : MonoBehaviour
 
     private int currentWaypointIndex;
     private bool isInitialized;
+    private float currentSpeed;
 
     private GateInfo currentJunctionGate;
     private int waitingGateIndex = -1;
@@ -89,16 +90,12 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         if (!isInitialized)
             return;
 
-        if (gatedWaypointIndices.TryGetValue(currentWaypointIndex, out GateInfo passedGate))
-            currentJunctionGate = passedGate;
-
-        ClearGateWaitState();
-        currentWaypointIndex++;
+        UpdateCurrentJunctionState();
 
         if (currentWaypointIndex >= waypoints.Count)
+        {
             Destroy(gameObject);
-        return;
-            UpdateCurrentJunctionState();
+            return;
         }
 
         Vector3 target = waypoints[currentWaypointIndex];
@@ -733,7 +730,7 @@ public class RoadVehicleAgentV2 : MonoBehaviour
             if (!other.IsVehicleInsideIntersection(other, myGate.junctionNode))
                 continue;
 
-            if (!AreJunctionMovementsCompatible(myGate, otherGate))
+            if (AreGateTrajectoriesConflicting(myGate, otherGate))
                 return true;
         }
 
@@ -750,29 +747,124 @@ public class RoadVehicleAgentV2 : MonoBehaviour
             : null;
     }
 
-    private bool AreJunctionMovementsCompatible(GateInfo a, GateInfo b)
+    private bool AreGateTrajectoriesConflicting(GateInfo a, GateInfo b)
     {
         if (a == null || b == null)
-            return false;
-
-        if (a.junctionNode != b.junctionNode)
             return true;
 
-        if (a.incomingSegment == null || b.incomingSegment == null)
+        if (a.junctionNode != b.junctionNode)
             return false;
 
-        if (a.outgoingLane == null || b.outgoingLane == null)
-            return false;
+        if (a.incomingLane == null || a.outgoingLane == null || b.incomingLane == null || b.outgoingLane == null)
+            return true;
 
-        // Машины с одного и того же подъезда могут ехать одновременно,
-        // если идут по разным полосам на выходе.
-        if (a.incomingSegment == b.incomingSegment)
+        List<Vector3> pathA = BuildGateConflictPath(a);
+        List<Vector3> pathB = BuildGateConflictPath(b);
+
+        if (pathA.Count < 2 || pathB.Count < 2)
+            return true;
+
+        float clearance = Mathf.Max(0.08f, laneCheckWidth * 0.75f);
+        return DoPolylinesConflict(pathA, pathB, clearance);
+    }
+
+    private List<Vector3> BuildGateConflictPath(GateInfo gate)
+    {
+        List<Vector3> points = new List<Vector3>();
+
+        if (gate == null || gate.incomingLane == null || gate.outgoingLane == null)
+            return points;
+
+        RoadLaneConnectionV2 connection = FindConnection(gate.incomingLane, gate.outgoingLane);
+
+        if (connection != null && connection.curvePoints != null && connection.curvePoints.Count >= 2)
         {
-            if (a.outgoingLane != b.outgoingLane)
-                return true;
+            for (int i = 0; i < connection.curvePoints.Count; i++)
+                AddPointIfFar(points, connection.curvePoints[i]);
+
+            return points;
+        }
+
+        return BuildNodeAnchoredTurn(gate.incomingLane, gate.outgoingLane);
+    }
+
+    private bool DoPolylinesConflict(List<Vector3> a, List<Vector3> b, float clearance)
+    {
+        if (a == null || b == null || a.Count < 2 || b.Count < 2)
+            return false;
+
+        for (int i = 0; i < a.Count - 1; i++)
+        {
+            Vector3 a0 = a[i];
+            Vector3 a1 = a[i + 1];
+
+            for (int j = 0; j < b.Count - 1; j++)
+            {
+                Vector3 b0 = b[j];
+                Vector3 b1 = b[j + 1];
+
+                if (SegmentsIntersect2D(a0, a1, b0, b1))
+                    return true;
+
+                float distance = DistanceBetweenSegments2D(a0, a1, b0, b1);
+                if (distance < clearance)
+                    return true;
+            }
         }
 
         return false;
+    }
+
+    private bool SegmentsIntersect2D(Vector3 a0, Vector3 a1, Vector3 b0, Vector3 b1)
+    {
+        Vector2 p = new Vector2(a0.x, a0.y);
+        Vector2 r = new Vector2(a1.x - a0.x, a1.y - a0.y);
+
+        Vector2 q = new Vector2(b0.x, b0.y);
+        Vector2 s = new Vector2(b1.x - b0.x, b1.y - b0.y);
+
+        float rxs = r.x * s.y - r.y * s.x;
+        float qpxr = (q.x - p.x) * r.y - (q.y - p.y) * r.x;
+
+        if (Mathf.Abs(rxs) < 0.0001f && Mathf.Abs(qpxr) < 0.0001f)
+            return false;
+
+        if (Mathf.Abs(rxs) < 0.0001f)
+            return false;
+
+        float t = ((q.x - p.x) * s.y - (q.y - p.y) * s.x) / rxs;
+        float u = ((q.x - p.x) * r.y - (q.y - p.y) * r.x) / rxs;
+
+        return t >= 0f && t <= 1f && u >= 0f && u <= 1f;
+    }
+
+    private float DistanceBetweenSegments2D(Vector3 a0, Vector3 a1, Vector3 b0, Vector3 b1)
+    {
+        float d1 = DistancePointToSegment2D(a0, b0, b1);
+        float d2 = DistancePointToSegment2D(a1, b0, b1);
+        float d3 = DistancePointToSegment2D(b0, a0, a1);
+        float d4 = DistancePointToSegment2D(b1, a0, a1);
+
+        return Mathf.Min(Mathf.Min(d1, d2), Mathf.Min(d3, d4));
+    }
+
+    private float DistancePointToSegment2D(Vector3 point, Vector3 a, Vector3 b)
+    {
+        Vector2 p = new Vector2(point.x, point.y);
+        Vector2 pa = new Vector2(a.x, a.y);
+        Vector2 pb = new Vector2(b.x, b.y);
+
+        Vector2 ab = pb - pa;
+        float lenSq = ab.sqrMagnitude;
+
+        if (lenSq < 0.0001f)
+            return Vector2.Distance(p, pa);
+
+        float t = Vector2.Dot(p - pa, ab) / lenSq;
+        t = Mathf.Clamp01(t);
+
+        Vector2 projection = pa + ab * t;
+        return Vector2.Distance(p, projection);
     }
 
     private bool IsVehicleInsideIntersection(RoadVehicleAgentV2 vehicle, RoadNodeV2 node)
