@@ -386,10 +386,13 @@ private int GetTurnLaneAllowance(int incomingLaneCount, int outgoingLaneCount)
     if (incomingLaneCount <= 0 || outgoingLaneCount <= 0)
         return 0;
 
-    if (incomingLaneCount == 1 || outgoingLaneCount == 1)
+    // Для 1-2 полос используем только одну крайнюю полосу под поворот.
+    if (incomingLaneCount <= 2 || outgoingLaneCount <= 2)
         return 1;
 
-    return Mathf.Min(2, Mathf.Min(incomingLaneCount, outgoingLaneCount));
+    // Для 3+ полос можно разрешить две крайние полосы,
+    // но только если и на выезде тоже есть запас по полосам.
+    return 2;
 }
 
 private RoadLaneDataV2 GetRightTurnCandidate(
