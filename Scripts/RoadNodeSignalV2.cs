@@ -286,10 +286,13 @@ public class RoadNodeSignalV2 : MonoBehaviour
 
         Vector3 right = new Vector3(dir.y, -dir.x, 0f);
 
+        float roadHalfWidth = segment != null ? segment.TotalRoadWidth * 0.5f : 0f;
+        float sideOffset = roadHalfWidth + signalSideOffset + bodyWidth * 0.5f;
+
         Vector3 pos =
             stopCenter
             - dir * signalBackOffset
-            + right * signalSideOffset;
+            + right * sideOffset;
 
         pos.z = 0f;
         return pos;
@@ -457,17 +460,21 @@ public class RoadNodeSignalV2 : MonoBehaviour
             head.rootObject.transform.rotation = Quaternion.identity;
             head.rootObject.transform.localScale = Vector3.one;
 
+            float visibleBodyWidth = Mathf.Max(bodyWidth, 0.24f);
+            float visibleBodyHeight = Mathf.Max(bodyHeight, 0.34f);
+            float visibleLampSize = Mathf.Max(lampSize, 0.16f);
+
             if (head.bodyRenderer != null)
             {
                 head.bodyRenderer.color = bodyColor;
-                head.bodyRenderer.transform.localScale = new Vector3(bodyWidth, bodyHeight, 1f);
+                head.bodyRenderer.transform.localScale = new Vector3(visibleBodyWidth, visibleBodyHeight, 1f);
             }
 
             if (head.lampRenderer != null)
             {
                 head.lampRenderer.color = GetLampColor(GetLampStateForSegment(head.segment));
                 head.lampRenderer.transform.localPosition = Vector3.zero;
-                head.lampRenderer.transform.localScale = new Vector3(lampSize, lampSize, 1f);
+                head.lampRenderer.transform.localScale = new Vector3(visibleLampSize, visibleLampSize, 1f);
             }
         }
     }

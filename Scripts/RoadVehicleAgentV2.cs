@@ -5,7 +5,7 @@ public class RoadVehicleAgentV2 : MonoBehaviour
 {
     private class GateInfo
     {
-        public RoadNodeSignalV2 signal;
+        public RoadNodeV2 junctionNode;
         public RoadSegmentV2 incomingSegment;
         public RoadLaneConnectionV2.MovementType movementType;
     }
@@ -265,21 +265,17 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         return points;
     }
 
-    
 
-   
+
+
     private GateInfo BuildGateFromRealConnection(RoadLaneConnectionV2 connection)
     {
-        if (connection == null || !connection.IsValid)
-            return null;
-
-        RoadNodeSignalV2 signal = connection.junctionNode.GetComponent<RoadNodeSignalV2>();
-        if (signal == null)
+        if (connection == null || !connection.IsValid || connection.junctionNode == null)
             return null;
 
         return new GateInfo
         {
-            signal = signal,
+            junctionNode = connection.junctionNode,
             incomingSegment = connection.fromLane.ownerSegment,
             movementType = connection.movementType
         };
@@ -294,10 +290,6 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         if (node == null || node != toLane.fromNode)
             return null;
 
-        RoadNodeSignalV2 signal = node.GetComponent<RoadNodeSignalV2>();
-        if (signal == null)
-            return null;
-
         float angle = Vector3.SignedAngle(
             fromLane.DirectionVector.normalized,
             toLane.DirectionVector.normalized,
@@ -308,7 +300,7 @@ public class RoadVehicleAgentV2 : MonoBehaviour
 
         return new GateInfo
         {
-            signal = signal,
+            junctionNode = node,
             incomingSegment = fromLane.ownerSegment,
             movementType = movementType
         };
@@ -585,19 +577,23 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         return dot1 > 0.9f && dot2 > 0.9f;
     }
 
-  
 
-    
+
+
 
     private bool IsGateBlocked(int waypointIndex)
     {
         if (!gatedWaypointIndices.TryGetValue(waypointIndex, out GateInfo gate))
             return false;
 
-        if (gate == null || gate.signal == null || gate.incomingSegment == null)
+        if (gate == null || gate.junctionNode == null || gate.incomingSegment == null)
             return false;
 
-        return !gate.signal.CanUseMovement(gate.incomingSegment, gate.movementType);
+        RoadNodeSignalV2 signal = gate.junctionNode.GetComponent<RoadNodeSignalV2>();
+        if (signal == null)
+            return false;
+
+        return !signal.CanUseMovement(gate.incomingSegment, gate.movementType);
     }
 
     private RoadLaneConnectionV2 FindConnection(RoadLaneDataV2 fromLane, RoadLaneDataV2 toLane)
