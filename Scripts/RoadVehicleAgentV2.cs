@@ -7,6 +7,7 @@ public class RoadVehicleAgentV2 : MonoBehaviour
     {
         public RoadNodeV2 junctionNode;
         public RoadSegmentV2 incomingSegment;
+        public RoadLaneDataV2 outgoingLane;
         public RoadLaneConnectionV2.MovementType movementType;
     }
 
@@ -17,6 +18,12 @@ public class RoadVehicleAgentV2 : MonoBehaviour
     [SerializeField] private float vehicleHalfLengthMin = 0.18f;
     [SerializeField] private float stopLineGap = 0.03f;
 
+    [Header("Junction rules")]
+    [SerializeField] private float gateApproachDistance = 0.35f;
+    [SerializeField] private float junctionOccupancyMargin = 0.08f;
+    [SerializeField] private float exitClearDistance = 0.8f;
+    [SerializeField] private float deadlockResolveDelay = 1.25f;
+
     private static readonly List<RoadVehicleAgentV2> activeVehicles = new List<RoadVehicleAgentV2>();
 
     private readonly List<Vector3> waypoints = new List<Vector3>();
@@ -24,6 +31,9 @@ public class RoadVehicleAgentV2 : MonoBehaviour
 
     private int currentWaypointIndex;
     private bool isInitialized;
+
+    private int waitingGateIndex = -1;
+    private float waitingGateStartTime = -1f;
 
     private void OnEnable()
     {
@@ -95,9 +105,13 @@ public class RoadVehicleAgentV2 : MonoBehaviour
 
         if (Vector3.Distance(transform.position, target) < 0.01f)
         {
-            if (IsGateBlocked(currentWaypointIndex))
+            bool gateBlocked = IsGateBlocked(currentWaypointIndex);
+            UpdateGateWaitState(currentWaypointIndex, gateBlocked);
+
+            if (gateBlocked)
                 return;
 
+            ClearGateWaitState();
             currentWaypointIndex++;
 
             if (currentWaypointIndex >= waypoints.Count)
@@ -277,6 +291,7 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         {
             junctionNode = connection.junctionNode,
             incomingSegment = connection.fromLane.ownerSegment,
+            outgoingLane = connection.toLane,
             movementType = connection.movementType
         };
     }
@@ -302,6 +317,7 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         {
             junctionNode = node,
             incomingSegment = fromLane.ownerSegment,
+            outgoingLane = toLane,
             movementType = movementType
         };
     }
@@ -589,11 +605,242 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         if (gate == null || gate.junctionNode == null || gate.incomingSegment == null)
             return false;
 
-        RoadNodeSignalV2 signal = gate.junctionNode.GetComponent<RoadNodeSignalV2>();
-        if (signal == null)
+        if (IsIntersectionOccupied(gate.junctionNode))
+            return true;
+
+        if (IsExitLaneBlocked(gate.outgoingLane))
+            return true;
+
+        if (gate.junctionNode.UsesTrafficLight)
+        {
+            RoadNodeSignalV2 signal = gate.junctionNode.GetComponent<RoadNodeSignalV2>();
+            if (signal == null)
+                return true;
+
+            return !signal.CanUseMovement(gate.incomingSegment, gate.movementType);
+        }
+
+        bool blockedByRight = HasVehicleFromRight(gate);
+        bool blockedByOncoming = HasOncomingPriorityVehicle(gate);
+
+        if ((blockedByRight || blockedByOncoming) && !HasDeadlockPriority(gate.junctionNode))
+            return true;
+
+        return false;
+    }
+
+    private void UpdateGateWaitState(int waypointIndex, bool blocked)
+    {
+        if (!blocked)
+        {
+            ClearGateWaitState();
+            return;
+        }
+
+        if (waitingGateIndex != waypointIndex)
+        {
+            waitingGateIndex = waypointIndex;
+            waitingGateStartTime = Application.isPlaying ? Time.time : 0f;
+        }
+    }
+
+    private void ClearGateWaitState()
+    {
+        waitingGateIndex = -1;
+        waitingGateStartTime = -1f;
+    }
+
+    private float GetCurrentGateWaitTime()
+    {
+        if (!Application.isPlaying || waitingGateIndex < 0 || waitingGateStartTime < 0f)
+            return 0f;
+
+        return Time.time - waitingGateStartTime;
+    }
+
+    private bool IsIntersectionOccupied(RoadNodeV2 node)
+    {
+        if (node == null)
             return false;
 
-        return !signal.CanUseMovement(gate.incomingSegment, gate.movementType);
+        GetNodeHalfExtents(node, out float halfX, out float halfY);
+        halfX += junctionOccupancyMargin;
+        halfY += junctionOccupancyMargin;
+
+        Vector3 center = node.transform.position;
+
+        for (int i = 0; i < activeVehicles.Count; i++)
+        {
+            RoadVehicleAgentV2 other = activeVehicles[i];
+
+            if (other == null || other == this)
+                continue;
+
+            Vector3 p = other.transform.position;
+
+            if (Mathf.Abs(p.x - center.x) <= halfX && Mathf.Abs(p.y - center.y) <= halfY)
+                return true;
+        }
+
+        return false;
+    }
+
+    private bool IsExitLaneBlocked(RoadLaneDataV2 lane)
+    {
+        if (lane == null)
+            return false;
+
+        Vector3 dir = lane.DirectionVector.normalized;
+        Vector3 laneStart = lane.start;
+
+        float clearDistance = Mathf.Max(
+            exitClearDistance,
+            GetProjectedHalfLengthAlong(dir) * 2f + safeDistance
+        );
+
+        float laneHalfWidth = 0.3f;
+        if (lane.ownerSegment != null)
+            laneHalfWidth = Mathf.Max(0.15f, lane.ownerSegment.LaneWidth * 0.45f);
+
+        for (int i = 0; i < activeVehicles.Count; i++)
+        {
+            RoadVehicleAgentV2 other = activeVehicles[i];
+
+            if (other == null || other == this)
+                continue;
+
+            Vector3 delta = other.transform.position - laneStart;
+            float forward = Vector3.Dot(delta, dir);
+
+            if (forward < -0.15f || forward > clearDistance)
+                continue;
+
+            float lateral = Mathf.Abs(dir.x * delta.y - dir.y * delta.x);
+            if (lateral <= laneHalfWidth)
+                return true;
+        }
+
+        return false;
+    }
+
+    private bool HasVehicleFromRight(GateInfo myGate)
+    {
+        if (myGate == null || myGate.junctionNode == null || myGate.incomingSegment == null)
+            return false;
+
+        Vector3 myIncomingDir = GetIncomingDirection(myGate.incomingSegment, myGate.junctionNode);
+
+        for (int i = 0; i < activeVehicles.Count; i++)
+        {
+            RoadVehicleAgentV2 other = activeVehicles[i];
+
+            if (!TryGetActiveGateAtNode(other, myGate.junctionNode, out GateInfo otherGate))
+                continue;
+
+            Vector3 otherIncomingDir = GetIncomingDirection(otherGate.incomingSegment, otherGate.junctionNode);
+            float angle = Vector3.SignedAngle(myIncomingDir, otherIncomingDir, Vector3.forward);
+
+            if (angle > 45f && angle < 135f)
+                return true;
+        }
+
+        return false;
+    }
+
+    private bool HasOncomingPriorityVehicle(GateInfo myGate)
+    {
+        if (myGate == null || myGate.junctionNode == null || myGate.incomingSegment == null)
+            return false;
+
+        if (myGate.movementType != RoadLaneConnectionV2.MovementType.Left)
+            return false;
+
+        Vector3 myIncomingDir = GetIncomingDirection(myGate.incomingSegment, myGate.junctionNode);
+
+        for (int i = 0; i < activeVehicles.Count; i++)
+        {
+            RoadVehicleAgentV2 other = activeVehicles[i];
+
+            if (!TryGetActiveGateAtNode(other, myGate.junctionNode, out GateInfo otherGate))
+                continue;
+
+            Vector3 otherIncomingDir = GetIncomingDirection(otherGate.incomingSegment, otherGate.junctionNode);
+            float absAngle = Mathf.Abs(Vector3.SignedAngle(myIncomingDir, otherIncomingDir, Vector3.forward));
+
+            bool isOncoming = absAngle > 135f;
+            if (!isOncoming)
+                continue;
+
+            if (otherGate.movementType == RoadLaneConnectionV2.MovementType.Straight ||
+                otherGate.movementType == RoadLaneConnectionV2.MovementType.Right)
+                return true;
+        }
+
+        return false;
+    }
+
+    private bool HasDeadlockPriority(RoadNodeV2 node)
+    {
+        if (node == null || !Application.isPlaying)
+            return false;
+
+        if (GetCurrentGateWaitTime() < deadlockResolveDelay)
+            return false;
+
+        int bestId = GetInstanceID();
+        bool hasCompetitor = false;
+
+        for (int i = 0; i < activeVehicles.Count; i++)
+        {
+            RoadVehicleAgentV2 other = activeVehicles[i];
+
+            if (!TryGetActiveGateAtNode(other, node, out _))
+                continue;
+
+            hasCompetitor = true;
+
+            if (other.GetInstanceID() < bestId)
+                bestId = other.GetInstanceID();
+        }
+
+        return hasCompetitor && bestId == GetInstanceID();
+    }
+
+    private bool TryGetActiveGateAtNode(RoadVehicleAgentV2 vehicle, RoadNodeV2 node, out GateInfo gate)
+    {
+        gate = null;
+
+        if (vehicle == null || vehicle == this || node == null)
+            return false;
+
+        if (vehicle.currentWaypointIndex >= vehicle.waypoints.Count)
+            return false;
+
+        if (!vehicle.gatedWaypointIndices.TryGetValue(vehicle.currentWaypointIndex, out gate))
+            return false;
+
+        if (gate == null || gate.junctionNode != node || gate.incomingSegment == null)
+            return false;
+
+        Vector3 gatePoint = vehicle.waypoints[vehicle.currentWaypointIndex];
+        if (Vector3.Distance(vehicle.transform.position, gatePoint) > gateApproachDistance)
+            return false;
+
+        return true;
+    }
+
+    private Vector3 GetIncomingDirection(RoadSegmentV2 segment, RoadNodeV2 node)
+    {
+        if (segment == null || node == null)
+            return Vector3.right;
+
+        if (segment.EndNode == node && segment.StartNode != null)
+            return (node.transform.position - segment.StartNode.transform.position).normalized;
+
+        if (segment.StartNode == node && segment.EndNode != null)
+            return (node.transform.position - segment.EndNode.transform.position).normalized;
+
+        return Vector3.right;
     }
 
     private RoadLaneConnectionV2 FindConnection(RoadLaneDataV2 fromLane, RoadLaneDataV2 toLane)
