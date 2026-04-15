@@ -51,9 +51,9 @@ public class RoadNodeSignalV2 : MonoBehaviour
     [SerializeField] private float bodyHeight = 0.34f;
     [SerializeField] private float lampSize = 0.16f;
     [SerializeField] private float signalScale = 5f;
-    [SerializeField] private float signalSideOffset = 0.04f;
+    [SerializeField] private float signalSideOffset = 0.02f;
     [SerializeField] private float extraRightOffset = 0.02f;
-    [SerializeField] private float signalBackOffset = 0.08f;
+    [SerializeField] private float signalBackOffset = 0.12f;
     [SerializeField] private int bodySortingOrder = 60;
     [SerializeField] private int lampSortingOrder = 61;
     [SerializeField] private Color bodyColor = new Color(0.12f, 0.12f, 0.12f, 1f);
@@ -283,6 +283,24 @@ public class RoadNodeSignalV2 : MonoBehaviour
         return sum / count;
     }
 
+    private float GetIncomingCarriageHalfWidth(RoadSegmentV2 segment)
+    {
+        if (segment == null || node == null)
+            return 0f;
+
+        int incomingLaneCount = 0;
+
+        if (segment.EndNode == node)
+            incomingLaneCount = Mathf.Max(0, segment.ForwardLanes);
+        else if (segment.StartNode == node)
+            incomingLaneCount = Mathf.Max(0, segment.BackwardLanes);
+
+        if (incomingLaneCount <= 0)
+            return 0f;
+
+        return incomingLaneCount * segment.LaneWidth * 0.5f;
+    }
+
     private Vector3 GetSignalHeadPosition(RoadSegmentV2 segment)
     {
         Vector3 stopCenter = GetIncomingStopCenter(segment);
@@ -293,9 +311,8 @@ public class RoadNodeSignalV2 : MonoBehaviour
 
         Vector3 right = new Vector3(dir.y, -dir.x, 0f);
 
-        float roadHalfWidth = segment != null ? segment.TotalRoadWidth * 0.5f : 0f;
-        float scale = Mathf.Max(signalScale, 0.01f);
-        float sideOffset = roadHalfWidth + signalSideOffset + extraRightOffset;
+        float incomingHalfWidth = GetIncomingCarriageHalfWidth(segment);
+        float sideOffset = incomingHalfWidth + signalSideOffset + extraRightOffset;
 
         Vector3 pos =
             stopCenter
