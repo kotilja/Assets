@@ -37,6 +37,7 @@ public class RoadVehicleAgentV2 : MonoBehaviour
     private bool isInitialized;
     private float currentSpeed;
 
+    private GateInfo currentJunctionGate;
     private int waitingGateIndex = -1;
     private float waitingGateStartTime = -1f;
 
@@ -65,6 +66,7 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         waypoints.Clear();
         gatedWaypointIndices.Clear();
         currentWaypointIndex = 0;
+        currentJunctionGate = null;
 
         BuildWaypointPath(actualInitialLane, lanePath);
 
@@ -91,6 +93,7 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         {
             Destroy(gameObject);
             return;
+            UpdateCurrentJunctionState();
         }
 
         Vector3 target = waypoints[currentWaypointIndex];
@@ -137,6 +140,9 @@ public class RoadVehicleAgentV2 : MonoBehaviour
 
             if (reachedGateBlocked)
                 return;
+
+            if (gatedWaypointIndices.TryGetValue(currentWaypointIndex, out GateInfo passedGate))
+                currentJunctionGate = passedGate;
 
             ClearGateWaitState();
             currentWaypointIndex++;
@@ -668,7 +674,7 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         if (gate == null || gate.junctionNode == null || gate.incomingSegment == null)
             return false;
 
-        if (IsIntersectionOccupied(gate.junctionNode))
+        if (IsIntersectionOccupiedByConflictingVehicle(gate))
             return true;
 
         if (IsExitLaneBlocked(gate.outgoingLane))
@@ -690,6 +696,91 @@ public class RoadVehicleAgentV2 : MonoBehaviour
             return true;
 
         return false;
+    }
+
+    private void UpdateCurrentJunctionState()
+    {
+        if (currentJunctionGate == null || currentJunctionGate.junctionNode == null)
+            return;
+
+        if (!IsVehicleInsideIntersection(this, currentJunctionGate.junctionNode))
+            currentJunctionGate = null;
+    }
+
+    private bool IsIntersectionOccupiedByConflictingVehicle(GateInfo myGate)
+    {
+        if (myGate == null || myGate.junctionNode == null)
+            return false;
+
+        for (int i = 0; i < activeVehicles.Count; i++)
+        {
+            RoadVehicleAgentV2 other = activeVehicles[i];
+
+            if (other == null || other == this)
+                continue;
+
+            GateInfo otherGate = other.GetCurrentJunctionGateForNode(myGate.junctionNode);
+            if (otherGate == null)
+                continue;
+
+            if (!other.IsVehicleInsideIntersection(other, myGate.junctionNode))
+                continue;
+
+            if (!AreJunctionMovementsCompatible(myGate, otherGate))
+                return true;
+        }
+
+        return false;
+    }
+
+    private GateInfo GetCurrentJunctionGateForNode(RoadNodeV2 node)
+    {
+        if (currentJunctionGate == null || node == null)
+            return null;
+
+        return currentJunctionGate.junctionNode == node
+            ? currentJunctionGate
+            : null;
+    }
+
+    private bool AreJunctionMovementsCompatible(GateInfo a, GateInfo b)
+    {
+        if (a == null || b == null)
+            return false;
+
+        if (a.junctionNode != b.junctionNode)
+            return true;
+
+        if (a.incomingSegment == null || b.incomingSegment == null)
+            return false;
+
+        if (a.outgoingLane == null || b.outgoingLane == null)
+            return false;
+
+        // Машины с одного и того же подъезда могут ехать одновременно,
+        // если идут по разным полосам на выходе.
+        if (a.incomingSegment == b.incomingSegment)
+        {
+            if (a.outgoingLane != b.outgoingLane)
+                return true;
+        }
+
+        return false;
+    }
+
+    private bool IsVehicleInsideIntersection(RoadVehicleAgentV2 vehicle, RoadNodeV2 node)
+    {
+        if (vehicle == null || node == null)
+            return false;
+
+        GetNodeHalfExtents(node, out float halfX, out float halfY);
+        halfX += junctionOccupancyMargin;
+        halfY += junctionOccupancyMargin;
+
+        Vector3 center = node.transform.position;
+        Vector3 p = vehicle.transform.position;
+
+        return Mathf.Abs(p.x - center.x) <= halfX && Mathf.Abs(p.y - center.y) <= halfY;
     }
 
     private void UpdateGateWaitState(int waypointIndex, bool blocked)
