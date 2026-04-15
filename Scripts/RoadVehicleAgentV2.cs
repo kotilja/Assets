@@ -12,6 +12,10 @@ public class RoadVehicleAgentV2 : MonoBehaviour
     }
 
     [SerializeField] private float speed = 3f;
+    [SerializeField] private float acceleration = 5f;
+    [SerializeField] private float braking = 8f;
+    [SerializeField] private float rotationSpeed = 540f;
+
     [SerializeField] private float lookAheadDistance = 0.25f;
     [SerializeField] private float safeDistance = 0.45f;
     [SerializeField] private float laneCheckWidth = 0.18f;
@@ -31,6 +35,7 @@ public class RoadVehicleAgentV2 : MonoBehaviour
 
     private int currentWaypointIndex;
     private bool isInitialized;
+    private float currentSpeed;
 
     private int waitingGateIndex = -1;
     private float waitingGateStartTime = -1f;
@@ -73,6 +78,7 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         RotateTowards(waypoints[1] - waypoints[0]);
 
         currentWaypointIndex = 1;
+        currentSpeed = 0f;
         isInitialized = true;
     }
 
@@ -89,26 +95,47 @@ public class RoadVehicleAgentV2 : MonoBehaviour
 
         Vector3 target = waypoints[currentWaypointIndex];
         Vector3 currentPosition = transform.position;
+        Vector3 toTarget = target - currentPosition;
 
-        Vector3 direction = target - currentPosition;
-        if (direction.sqrMagnitude > 0.0001f)
+        float distanceToTarget = toTarget.magnitude;
+        Vector3 moveDirection = distanceToTarget > 0.0001f
+            ? toTarget / distanceToTarget
+            : Vector3.zero;
+
+        if (moveDirection.sqrMagnitude > 0.0001f)
             RotateTowards(GetLookAheadDirection(currentWaypointIndex));
 
-        float maxMove = speed * Time.deltaTime;
-        maxMove = Mathf.Min(maxMove, GetAllowedMoveDistance(currentPosition, direction.normalized, maxMove));
+        bool gateBlocked = gatedWaypointIndices.ContainsKey(currentWaypointIndex) && IsGateBlocked(currentWaypointIndex);
 
-        transform.position = Vector3.MoveTowards(
-            currentPosition,
-            target,
-            maxMove
-        );
+        float desiredSpeed = speed;
+
+        if (gateBlocked || currentWaypointIndex == waypoints.Count - 1)
+            desiredSpeed = GetApproachSpeed(distanceToTarget);
+
+        float allowedMoveDistance = moveDirection.sqrMagnitude > 0.0001f
+            ? GetAllowedMoveDistance(currentPosition, moveDirection, Mathf.Max(speed, currentSpeed) * Time.deltaTime)
+            : 0f;
+
+        if (Time.deltaTime > 0.0001f)
+        {
+            float trafficLimitedSpeed = allowedMoveDistance / Time.deltaTime;
+            desiredSpeed = Mathf.Min(desiredSpeed, trafficLimitedSpeed);
+        }
+
+        float speedChangeRate = desiredSpeed < currentSpeed ? braking : acceleration;
+        currentSpeed = Mathf.MoveTowards(currentSpeed, desiredSpeed, speedChangeRate * Time.deltaTime);
+
+        float moveDistance = Mathf.Min(currentSpeed * Time.deltaTime, distanceToTarget, allowedMoveDistance);
+
+        if (moveDirection.sqrMagnitude > 0.0001f && moveDistance > 0f)
+            transform.position = currentPosition + moveDirection * moveDistance;
 
         if (Vector3.Distance(transform.position, target) < 0.01f)
         {
-            bool gateBlocked = IsGateBlocked(currentWaypointIndex);
-            UpdateGateWaitState(currentWaypointIndex, gateBlocked);
+            bool reachedGateBlocked = IsGateBlocked(currentWaypointIndex);
+            UpdateGateWaitState(currentWaypointIndex, reachedGateBlocked);
 
-            if (gateBlocked)
+            if (reachedGateBlocked)
                 return;
 
             ClearGateWaitState();
@@ -152,6 +179,15 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         }
 
         return allowed;
+    }
+
+    private float GetApproachSpeed(float distanceToTarget)
+    {
+        if (distanceToTarget <= 0f)
+            return 0f;
+
+        float decel = Mathf.Max(0.01f, braking);
+        return Mathf.Min(speed, Mathf.Sqrt(2f * decel * distanceToTarget));
     }
 
     private void BuildWaypointPath(RoadLaneDataV2 initialLane, List<RoadLaneDataV2> lanePath)
@@ -206,7 +242,9 @@ public class RoadVehicleAgentV2 : MonoBehaviour
             if (gate != null)
                 gatedWaypointIndices[gateIndex] = gate;
 
-            List<Vector3> turnPoints = BuildNodeAnchoredTurn(activeLane, plannedNextLane);
+            List<Vector3> turnPoints = connection != null
+                ? BuildTurnFromConnection(activeLane, plannedNextLane, connection)
+                : BuildNodeAnchoredTurn(activeLane, plannedNextLane);
 
             for (int j = 0; j < turnPoints.Count; j++)
                 AddPointIfFar(turnPoints[j]);
@@ -339,6 +377,31 @@ public class RoadVehicleAgentV2 : MonoBehaviour
     private List<Vector3> BuildSyntheticTurn(RoadLaneDataV2 fromLane, RoadLaneDataV2 toLane)
     {
         return BuildNodeAnchoredTurn(fromLane, toLane);
+    }
+
+    private List<Vector3> BuildTurnFromConnection(
+    RoadLaneDataV2 fromLane,
+    RoadLaneDataV2 toLane,
+    RoadLaneConnectionV2 connection)
+    {
+        if (connection == null || connection.curvePoints == null || connection.curvePoints.Count < 2)
+            return BuildNodeAnchoredTurn(fromLane, toLane);
+
+        List<Vector3> points = new List<Vector3>();
+
+        Vector3 inDir = fromLane != null
+            ? fromLane.DirectionVector.normalized
+            : Vector3.right;
+
+        Vector3 firstCurvePoint = connection.curvePoints[0];
+        Vector3 stopPoint = GetStopPointBeforeNode(fromLane, firstCurvePoint, inDir);
+
+        points.Add(stopPoint);
+
+        for (int i = 0; i < connection.curvePoints.Count; i++)
+            AddPointIfFar(points, connection.curvePoints[i]);
+
+        return points;
     }
 
     private List<Vector3> BuildNodeAnchoredTurn(RoadLaneDataV2 fromLane, RoadLaneDataV2 toLane)
@@ -928,6 +991,12 @@ public class RoadVehicleAgentV2 : MonoBehaviour
             return;
 
         float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg;
-        transform.rotation = Quaternion.Euler(0f, 0f, angle);
+        Quaternion targetRotation = Quaternion.Euler(0f, 0f, angle);
+
+        transform.rotation = Quaternion.RotateTowards(
+            transform.rotation,
+            targetRotation,
+            rotationSpeed * Time.deltaTime
+        );
     }
 }

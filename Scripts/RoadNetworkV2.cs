@@ -708,7 +708,6 @@ private void AddManualConnection(RoadNodeV2 node, RoadLaneDataV2 fromLane, RoadL
         float signedAngle = Vector3.SignedAngle(inDir, outDir, Vector3.forward);
         float absAngle = Mathf.Abs(signedAngle);
 
-        // Почти прямой переход
         if (absAngle < 20f || Vector3.Distance(p0, p2) < 0.15f)
         {
             points.Add(p0);
@@ -719,17 +718,52 @@ private void AddManualConnection(RoadNodeV2 node, RoadLaneDataV2 fromLane, RoadL
 
         if (TryGetAxisAlignedTurnCorner(p0, inDir, p2, outDir, out Vector3 corner))
         {
+            float laneSize = 0.6f;
+
+            if (fromLane.ownerSegment != null && toLane.ownerSegment != null)
+                laneSize = Mathf.Min(fromLane.ownerSegment.LaneWidth, toLane.ownerSegment.LaneWidth);
+
+            float distToCornerA = Vector3.Distance(p0, corner);
+            float distToCornerB = Vector3.Distance(corner, p2);
+            float maxInset = Mathf.Min(distToCornerA, distToCornerB) * 0.45f;
+
+            float inset = Mathf.Clamp(laneSize * 0.75f, 0.08f, maxInset);
+
+            Vector3 entry = Vector3.MoveTowards(corner, p0, inset);
+            Vector3 exit = Vector3.MoveTowards(corner, p2, inset);
+
             points.Add(p0);
-            AddPointIfFar(points, corner);
+            AddPointIfFar(points, entry);
+
+            AddQuadraticBezierSamples(points, entry, corner, exit, 4);
+
             AddPointIfFar(points, p2);
             return points;
         }
 
-        // fallback
         points.Add(p0);
         AddPointIfFar(points, Vector3.Lerp(p0, p2, 0.5f));
         AddPointIfFar(points, p2);
         return points;
+    }
+
+    private void AddQuadraticBezierSamples(
+    List<Vector3> points,
+    Vector3 p0,
+    Vector3 p1,
+    Vector3 p2,
+    int sampleCount)
+    {
+        if (points == null)
+            return;
+
+        int samples = Mathf.Max(2, sampleCount);
+
+        for (int i = 1; i <= samples; i++)
+        {
+            float t = i / (float)samples;
+            AddPointIfFar(points, EvaluateQuadraticBezier(p0, p1, p2, t));
+        }
     }
 
     private bool TryGetAxisAlignedTurnCorner(
