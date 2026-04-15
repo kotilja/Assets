@@ -132,16 +132,51 @@ public class RoadBuildToolV2 : MonoBehaviour
             return;
 
 #if UNITY_EDITOR
-        Undo.RecordObject(node, "Toggle Junction Control Mode");
+    Undo.RecordObject(node, "Toggle Junction Control Mode");
 #endif
 
         node.ToggleControlMode();
+
+        RoadNodeSignalV2 signal = node.GetComponent<RoadNodeSignalV2>();
+
+        if (node.UsesTrafficLight)
+        {
+            if (signal == null)
+            {
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+                signal = Undo.AddComponent<RoadNodeSignalV2>(node.gameObject);
+            else
+                signal = node.gameObject.AddComponent<RoadNodeSignalV2>();
+#else
+                signal = node.gameObject.AddComponent<RoadNodeSignalV2>();
+#endif
+            }
+
+            if (signal != null)
+                signal.SyncFromNode();
+        }
+        else
+        {
+            if (signal != null)
+            {
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+                Undo.DestroyObjectImmediate(signal);
+            else
+                Destroy(signal);
+#else
+                Destroy(signal);
+#endif
+            }
+        }
+
         network.RefreshAll();
 
 #if UNITY_EDITOR
-        EditorUtility.SetDirty(node);
-        EditorUtility.SetDirty(network);
-        EditorSceneManager.MarkSceneDirty(gameObject.scene);
+    EditorUtility.SetDirty(node);
+    EditorUtility.SetDirty(network);
+    EditorSceneManager.MarkSceneDirty(gameObject.scene);
 #endif
     }
 
