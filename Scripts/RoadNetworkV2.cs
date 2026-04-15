@@ -54,6 +54,7 @@ private class ManualLaneConnectionProfile
     [Header("Intersection handling")]
     [SerializeField] private float intersectionSnapDistance = 0.05f;
     [SerializeField] private float intersectionEpsilon = 0.001f;
+    [SerializeField] private float mergeStraightAngleThreshold = 10f;
 
     [SerializeField] private int nextNodeId = 1;
     [SerializeField] private int nextSegmentId = 1;
@@ -1218,21 +1219,29 @@ private void SplitExistingSegment(RoadSegmentV2 segment, RoadNodeV2 splitNode)
         return true;
     }
 
-public void DeleteSegment(RoadSegmentV2 segment)
-{
-    if (segment == null)
-        return;
+    public void DeleteSegment(RoadSegmentV2 segment)
+    {
+        if (segment == null)
+            return;
 
-    DeleteSegmentInternal(segment, deleteOrphanNodes: true);
-    RefreshAll();
+        RoadNodeV2 startNode = segment.StartNode;
+        RoadNodeV2 endNode = segment.EndNode;
+
+        DeleteSegmentInternal(segment, deleteOrphanNodes: true);
+
+        TryCollapsePassThroughNode(startNode);
+        if (endNode != startNode)
+            TryCollapsePassThroughNode(endNode);
+
+        RefreshAll();
 
 #if UNITY_EDITOR
     EditorUtility.SetDirty(this);
     EditorSceneManager.MarkSceneDirty(gameObject.scene);
 #endif
-}
+    }
 
-private void DeleteSegmentInternal(RoadSegmentV2 segment, bool deleteOrphanNodes)
+    private void DeleteSegmentInternal(RoadSegmentV2 segment, bool deleteOrphanNodes)
 {
     if (segment == null)
         return;
@@ -1277,6 +1286,120 @@ private void DeleteNodeIfOrphaned(RoadNodeV2 node)
     Destroy(node.gameObject);
 #endif
 }
+
+    private bool TryCollapsePassThroughNode(RoadNodeV2 node)
+    {
+        if (node == null)
+            return false;
+
+        if (node.ConnectedSegments.Count != 2)
+            return false;
+
+        RoadSegmentV2 first = node.ConnectedSegments[0];
+        RoadSegmentV2 second = node.ConnectedSegments[1];
+
+        if (first == null || second == null || first == second)
+            return false;
+
+        RoadNodeV2 firstOther = GetOtherNode(first, node);
+        RoadNodeV2 secondOther = GetOtherNode(second, node);
+
+        if (firstOther == null || secondOther == null)
+            return false;
+
+        if (firstOther == secondOther)
+            return false;
+
+        if (!CanMergeSegmentsThroughNode(node, first, second, firstOther, secondOther))
+            return false;
+
+        int forwardLanes = GetLaneCountAlong(first, firstOther, node);
+        int backwardLanes = GetLaneCountAlong(first, node, firstOther);
+
+        float laneWidth = Mathf.Min(first.LaneWidth, second.LaneWidth);
+        float speedLimit = Mathf.Min(first.SpeedLimit, second.SpeedLimit);
+
+        DeleteSegmentInternal(first, deleteOrphanNodes: false);
+        DeleteSegmentInternal(second, deleteOrphanNodes: false);
+
+        if (nodes.Contains(node))
+            nodes.Remove(node);
+
+#if UNITY_EDITOR
+    Undo.DestroyObjectImmediate(node.gameObject);
+#else
+        Destroy(node.gameObject);
+#endif
+
+        CreateSegmentRaw(firstOther, secondOther, forwardLanes, backwardLanes, laneWidth, speedLimit);
+        return true;
+    }
+
+    private RoadNodeV2 GetOtherNode(RoadSegmentV2 segment, RoadNodeV2 node)
+    {
+        if (segment == null || node == null)
+            return null;
+
+        if (segment.StartNode == node)
+            return segment.EndNode;
+
+        if (segment.EndNode == node)
+            return segment.StartNode;
+
+        return null;
+    }
+
+    private bool CanMergeSegmentsThroughNode(
+        RoadNodeV2 centerNode,
+        RoadSegmentV2 first,
+        RoadSegmentV2 second,
+        RoadNodeV2 firstOther,
+        RoadNodeV2 secondOther)
+    {
+        if (centerNode == null || first == null || second == null || firstOther == null || secondOther == null)
+            return false;
+
+        Vector3 dirA = (centerNode.transform.position - firstOther.transform.position).normalized;
+        Vector3 dirB = (secondOther.transform.position - centerNode.transform.position).normalized;
+
+        float angle = Vector3.Angle(dirA, dirB);
+        if (angle > mergeStraightAngleThreshold)
+            return false;
+
+        int forwardA = GetLaneCountAlong(first, firstOther, centerNode);
+        int forwardB = GetLaneCountAlong(second, centerNode, secondOther);
+
+        int backwardA = GetLaneCountAlong(first, centerNode, firstOther);
+        int backwardB = GetLaneCountAlong(second, secondOther, centerNode);
+
+        if (forwardA != forwardB)
+            return false;
+
+        if (backwardA != backwardB)
+            return false;
+
+        if (Mathf.Abs(first.LaneWidth - second.LaneWidth) > 0.001f)
+            return false;
+
+        if (Mathf.Abs(first.SpeedLimit - second.SpeedLimit) > 0.001f)
+            return false;
+
+        return true;
+    }
+
+    private int GetLaneCountAlong(RoadSegmentV2 segment, RoadNodeV2 fromNode, RoadNodeV2 toNode)
+    {
+        if (segment == null || fromNode == null || toNode == null)
+            return 0;
+
+        if (segment.StartNode == fromNode && segment.EndNode == toNode)
+            return segment.ForwardLanes;
+
+        if (segment.EndNode == fromNode && segment.StartNode == toNode)
+            return segment.BackwardLanes;
+
+        return 0;
+    }
 
     private bool TryGetSegmentIntersection(
         Vector3 a,
