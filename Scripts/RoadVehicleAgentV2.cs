@@ -7,6 +7,7 @@ public class RoadVehicleAgentV2 : MonoBehaviour
     {
         public RoadNodeV2 junctionNode;
         public RoadSegmentV2 incomingSegment;
+        public RoadLaneDataV2 incomingLane;
         public RoadLaneDataV2 outgoingLane;
         public RoadLaneConnectionV2.MovementType movementType;
     }
@@ -35,7 +36,6 @@ public class RoadVehicleAgentV2 : MonoBehaviour
 
     private int currentWaypointIndex;
     private bool isInitialized;
-    private float currentSpeed;
 
     private GateInfo currentJunctionGate;
     private int waitingGateIndex = -1;
@@ -89,10 +89,15 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         if (!isInitialized)
             return;
 
+        if (gatedWaypointIndices.TryGetValue(currentWaypointIndex, out GateInfo passedGate))
+            currentJunctionGate = passedGate;
+
+        ClearGateWaitState();
+        currentWaypointIndex++;
+
         if (currentWaypointIndex >= waypoints.Count)
-        {
             Destroy(gameObject);
-            return;
+        return;
             UpdateCurrentJunctionState();
         }
 
@@ -335,10 +340,11 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         {
             junctionNode = connection.junctionNode,
             incomingSegment = connection.fromLane.ownerSegment,
+            incomingLane = connection.fromLane,
             outgoingLane = connection.toLane,
             movementType = connection.movementType
         };
-    }
+}
 
     private GateInfo BuildGateFromSyntheticTurn(RoadLaneDataV2 fromLane, RoadLaneDataV2 toLane)
     {
@@ -357,13 +363,14 @@ public class RoadVehicleAgentV2 : MonoBehaviour
 
         RoadLaneConnectionV2.MovementType movementType = GetMovementType(angle);
 
-        return new GateInfo
-        {
-            junctionNode = node,
-            incomingSegment = fromLane.ownerSegment,
-            outgoingLane = toLane,
-            movementType = movementType
-        };
+            return new GateInfo
+            {
+                junctionNode = node,
+                incomingSegment = fromLane.ownerSegment,
+                incomingLane = fromLane,
+                outgoingLane = toLane,
+                movementType = movementType
+            };
     }
 
     private RoadLaneConnectionV2.MovementType GetMovementType(float signedAngle)
