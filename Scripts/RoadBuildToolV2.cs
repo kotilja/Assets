@@ -12,7 +12,8 @@ public class RoadBuildToolV2 : MonoBehaviour
         DrawRoad,
         DeleteRoad,
         JunctionControl,
-        JunctionTurns
+        JunctionTurns,
+        LaneConnections
     }
 
     [SerializeField] private RoadNetworkV2 network;
@@ -38,6 +39,9 @@ public class RoadBuildToolV2 : MonoBehaviour
     [Header("Junction turns tool")]
     [SerializeField] private float approachPickDistance = 0.75f;
 
+    [Header("Lane connections tool")]
+    [SerializeField] private float lanePickDistance = 0.45f;
+
     [Header("Scene preview")]
     [SerializeField] private Color previewColor = Color.cyan;
     [SerializeField] private Color deletePreviewColor = Color.red;
@@ -47,6 +51,9 @@ public class RoadBuildToolV2 : MonoBehaviour
     [SerializeField] private RoadNodeV2 currentStartNode;
     [SerializeField] private RoadNodeV2 selectedTurnNode;
     [SerializeField] private RoadSegmentV2 selectedIncomingSegment;
+
+    [SerializeField] private int selectedFromLaneId;
+    [SerializeField] private int selectedToLaneId;
 
     public RoadNetworkV2 Network => network;
     public bool ToolEnabled => toolEnabled;
@@ -68,6 +75,14 @@ public class RoadBuildToolV2 : MonoBehaviour
     public RoadNodeV2 SelectedTurnNode => selectedTurnNode;
     public RoadSegmentV2 SelectedIncomingSegment => selectedIncomingSegment;
 
+    public float LanePickDistance => lanePickDistance;
+
+    public RoadLaneDataV2 SelectedFromLane =>
+        network != null ? network.FindLaneById(selectedFromLaneId) : null;
+
+    public RoadLaneDataV2 SelectedToLane =>
+        network != null ? network.FindLaneById(selectedToLaneId) : null;
+
     public void SetToolMode(ToolMode mode)
     {
         toolMode = mode;
@@ -77,6 +92,12 @@ public class RoadBuildToolV2 : MonoBehaviour
         {
             selectedTurnNode = null;
             selectedIncomingSegment = null;
+        }
+
+        if (toolMode != ToolMode.LaneConnections)
+        {
+            selectedFromLaneId = 0;
+            selectedToLaneId = 0;
         }
     }
 
@@ -103,6 +124,10 @@ public class RoadBuildToolV2 : MonoBehaviour
 
             case ToolMode.JunctionTurns:
                 HandleJunctionTurnsClick(worldPosition);
+                break;
+
+            case ToolMode.LaneConnections:
+                HandleLaneConnectionsClick(worldPosition);
                 break;
         }
     }
@@ -247,6 +272,165 @@ public class RoadBuildToolV2 : MonoBehaviour
 
         return selectedTurnNode.AllowsMovement(selectedIncomingSegment, movementType);
     }
+
+public void ClearLaneConnectionSelection()
+{
+    selectedFromLaneId = 0;
+    selectedToLaneId = 0;
+}
+
+public bool SelectedManualConnectionExists()
+{
+    if (network == null || selectedFromLaneId <= 0 || selectedToLaneId <= 0)
+        return false;
+
+    return network.HasManualConnection(selectedFromLaneId, selectedToLaneId);
+}
+
+public bool SelectedFromLaneHasManualConnections()
+{
+    if (network == null || selectedFromLaneId <= 0)
+        return false;
+
+    return network.HasManualConnectionsForLane(selectedFromLaneId);
+}
+
+public void ClearManualConnectionsForSelectedLane()
+{
+    if (network == null || selectedFromLaneId <= 0)
+        return;
+
+#if UNITY_EDITOR
+    Undo.RecordObject(network, "Clear Manual Lane Connections");
+#endif
+
+    network.ClearManualConnectionsForLane(selectedFromLaneId);
+
+#if UNITY_EDITOR
+    EditorUtility.SetDirty(network);
+    EditorSceneManager.MarkSceneDirty(gameObject.scene);
+#endif
+}
+
+private void HandleLaneConnectionsClick(Vector3 worldPosition)
+{
+    if (!toolEnabled || network == null)
+        return;
+
+    currentStartNode = null;
+    selectedTurnNode = null;
+    selectedIncomingSegment = null;
+
+    RoadLaneDataV2 currentFromLane = SelectedFromLane;
+
+    if (currentFromLane == null)
+    {
+        RoadLaneDataV2 incomingLane = FindNearestIncomingLane(worldPosition, lanePickDistance);
+        if (incomingLane != null)
+        {
+            selectedFromLaneId = incomingLane.laneId;
+            selectedToLaneId = 0;
+        }
+
+        return;
+    }
+
+    RoadLaneDataV2 outgoingLane = FindNearestOutgoingLane(currentFromLane.toNode, worldPosition, lanePickDistance);
+
+    if (outgoingLane != null)
+    {
+#if UNITY_EDITOR
+        Undo.RecordObject(network, "Toggle Manual Lane Connection");
+#endif
+
+        selectedToLaneId = outgoingLane.laneId;
+        network.ToggleManualLaneConnection(currentFromLane.laneId, outgoingLane.laneId);
+
+#if UNITY_EDITOR
+        EditorUtility.SetDirty(network);
+        EditorSceneManager.MarkSceneDirty(gameObject.scene);
+#endif
+        return;
+    }
+
+    RoadLaneDataV2 newIncomingLane = FindNearestIncomingLane(worldPosition, lanePickDistance);
+    if (newIncomingLane != null)
+    {
+        selectedFromLaneId = newIncomingLane.laneId;
+        selectedToLaneId = 0;
+        return;
+    }
+
+    selectedFromLaneId = 0;
+    selectedToLaneId = 0;
+}
+
+private RoadLaneDataV2 FindNearestIncomingLane(Vector3 worldPosition, float maxDistance)
+{
+    if (network == null)
+        return null;
+
+    float bestDistance = maxDistance;
+    RoadLaneDataV2 bestLane = null;
+
+    for (int i = 0; i < network.AllLanes.Count; i++)
+    {
+        RoadLaneDataV2 lane = network.AllLanes[i];
+        if (lane == null || lane.toNode == null)
+            continue;
+
+        if (lane.toNode.ConnectedSegments.Count <= 2)
+            continue;
+
+        float distance = DistancePointToSegment(worldPosition, lane.start, lane.end);
+        if (distance <= bestDistance)
+        {
+            bestDistance = distance;
+            bestLane = lane;
+        }
+    }
+
+    return bestLane;
+}
+
+private RoadLaneDataV2 FindNearestOutgoingLane(RoadNodeV2 node, Vector3 worldPosition, float maxDistance)
+{
+    if (network == null || node == null)
+        return null;
+
+    float bestDistance = maxDistance;
+    RoadLaneDataV2 bestLane = null;
+
+    for (int i = 0; i < network.AllLanes.Count; i++)
+    {
+        RoadLaneDataV2 lane = network.AllLanes[i];
+        if (lane == null || lane.fromNode != node)
+            continue;
+
+        float distance = DistancePointToSegment(worldPosition, lane.start, lane.end);
+        if (distance <= bestDistance)
+        {
+            bestDistance = distance;
+            bestLane = lane;
+        }
+    }
+
+    return bestLane;
+}
+
+    private float DistancePointToSegment(Vector3 point, Vector3 a, Vector3 b)
+        {
+            Vector3 ab = b - a;
+
+            if (ab.sqrMagnitude < 0.0001f)
+                return Vector3.Distance(point, a);
+
+            float t = Vector3.Dot(point - a, ab) / Vector3.Dot(ab, ab);
+            t = Mathf.Clamp01(t);
+
+            Vector3 projection = a + ab * t;
+            return Vector3.Distance(point, projection);
+        }
 
     public void ClearCurrentChain()
     {

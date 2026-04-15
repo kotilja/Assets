@@ -19,6 +19,9 @@ public class RoadBuildToolV2Editor : Editor
         if (Tool.CurrentToolMode == RoadBuildToolV2.ToolMode.JunctionTurns)
             DrawTurnEditorPanel();
 
+        if (Tool.CurrentToolMode == RoadBuildToolV2.ToolMode.LaneConnections)
+            DrawLaneConnectionsPanel();
+
         if (GUILayout.Button("Сбросить текущую цепочку"))
         {
             Tool.ClearCurrentChain();
@@ -76,6 +79,15 @@ public class RoadBuildToolV2Editor : Editor
         }
 
         EditorGUILayout.EndHorizontal();
+
+        if (GUILayout.Button("Связи полос"))
+        {
+            Tool.SetToolMode(RoadBuildToolV2.ToolMode.LaneConnections);
+            EditorUtility.SetDirty(Tool);
+            SceneView.RepaintAll();
+        }
+
+
     }
 
     private void DrawTurnEditorPanel()
@@ -105,6 +117,53 @@ public class RoadBuildToolV2Editor : Editor
         DrawMovementToggleButton("→ Направо", RoadLaneConnectionV2.MovementType.Right);
 
         EditorGUILayout.EndHorizontal();
+    }
+
+    private void DrawLaneConnectionsPanel()
+    {
+        EditorGUILayout.Space(8f);
+        EditorGUILayout.LabelField("Редактор ручных связей полос", EditorStyles.boldLabel);
+
+        EditorGUILayout.ObjectField("Входящая полоса", Tool.SelectedFromLane, typeof(RoadLaneDataV2), false);
+        EditorGUILayout.ObjectField("Выходящая полоса", Tool.SelectedToLane, typeof(RoadLaneDataV2), false);
+
+        if (Tool.SelectedFromLane == null)
+        {
+            EditorGUILayout.HelpBox("Кликни по входящей полосе перед перекрестком.", MessageType.Info);
+            return;
+        }
+
+        if (Tool.SelectedToLane == null)
+        {
+            EditorGUILayout.HelpBox("Теперь кликни по выходящей полосе после перекрестка.", MessageType.Info);
+        }
+        else
+        {
+            EditorGUILayout.HelpBox(
+                Tool.SelectedManualConnectionExists()
+                    ? "Ручная связь существует. Повторный клик по этой выходящей полосе удалит ее."
+                    : "Ручной связи нет. Клик по этой выходящей полосе создаст ее.",
+                MessageType.None
+            );
+        }
+
+        if (Tool.SelectedFromLaneHasManualConnections())
+        {
+            if (GUILayout.Button("Очистить все ручные связи у выбранной входящей полосы"))
+            {
+                Tool.ClearManualConnectionsForSelectedLane();
+                EditorUtility.SetDirty(Tool);
+                EditorUtility.SetDirty(Tool.Network);
+                SceneView.RepaintAll();
+            }
+        }
+
+        if (GUILayout.Button("Сбросить выбор полос"))
+        {
+            Tool.ClearLaneConnectionSelection();
+            EditorUtility.SetDirty(Tool);
+            SceneView.RepaintAll();
+        }
     }
 
     private void DrawMovementToggleButton(string label, RoadLaneConnectionV2.MovementType movementType)
@@ -139,6 +198,8 @@ public class RoadBuildToolV2Editor : Editor
 
             case RoadBuildToolV2.ToolMode.JunctionTurns:
                 return "Режим манёвров: ЛКМ по перекрестку и ближе к нужному подъезду выбирает входящий сегмент. В инспекторе включаются и выключаются ← ↑ →.";
+            case RoadBuildToolV2.ToolMode.LaneConnections:
+                return "Режим ручных связей полос: сначала ЛКМ по входящей полосе перед перекрестком, потом ЛКМ по выходящей полосе после перекрестка. Повторный клик по той же выходящей полосе снимает связь.";
 
             default:
                 return "-";
@@ -159,6 +220,7 @@ public class RoadBuildToolV2Editor : Editor
         Vector3 worldPosition = GetWorldPointOnPlane(e.mousePosition);
         DrawPreview(worldPosition);
         DrawTurnSelectionOverlay();
+        DrawLaneConnectionOverlay();
 
         if (e.type == EventType.MouseDown && e.button == 0 && !e.alt)
         {
@@ -214,6 +276,12 @@ public class RoadBuildToolV2Editor : Editor
                 Handles.DrawSolidDisc(worldPosition, Vector3.forward, 0.06f);
                 Handles.DrawWireDisc(worldPosition, Vector3.forward, Tool.ApproachPickDistance);
                 break;
+
+            case RoadBuildToolV2.ToolMode.LaneConnections:
+                Handles.color = Tool.TurnEditPreviewColor;
+                Handles.DrawSolidDisc(worldPosition, Vector3.forward, 0.06f);
+                Handles.DrawWireDisc(worldPosition, Vector3.forward, Tool.LanePickDistance);
+                 break;
         }
     }
 
@@ -257,6 +325,30 @@ public class RoadBuildToolV2Editor : Editor
             );
         }
     }
+
+
+    private void DrawLaneConnectionOverlay()
+        {
+            if (Tool.CurrentToolMode != RoadBuildToolV2.ToolMode.LaneConnections)
+                return;
+
+            if (Tool.SelectedFromLane != null)
+            {
+                Handles.color = new Color(0.2f, 1f, 1f, 1f);
+                Handles.DrawLine(Tool.SelectedFromLane.start, Tool.SelectedFromLane.end);
+                Handles.DrawWireDisc(Tool.SelectedFromLane.MidPoint, Vector3.forward, 0.10f);
+            }
+
+            if (Tool.SelectedToLane != null)
+            {
+                Handles.color = Tool.SelectedManualConnectionExists()
+                    ? new Color(0.2f, 1f, 0.2f, 1f)
+                    : new Color(1f, 0.5f, 0.2f, 1f);
+
+                Handles.DrawLine(Tool.SelectedToLane.start, Tool.SelectedToLane.end);
+                Handles.DrawWireDisc(Tool.SelectedToLane.MidPoint, Vector3.forward, 0.10f);
+            }
+        }
 
     private Vector3 GetWorldPointOnPlane(Vector2 mousePosition)
     {
