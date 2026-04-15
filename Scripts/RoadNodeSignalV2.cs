@@ -51,7 +51,7 @@ public class RoadNodeSignalV2 : MonoBehaviour
     [SerializeField] private float bodyHeight = 0.34f;
     [SerializeField] private float lampSize = 0.16f;
     [SerializeField] private float signalScale = 5f;
-    [SerializeField] private float signalSideOffset = 0.08f;
+    [SerializeField] private float signalSideOffset = 0.04f;
     [SerializeField] private float extraRightOffset = 0.02f;
     [SerializeField] private float signalBackOffset = 0.08f;
     [SerializeField] private int bodySortingOrder = 60;
