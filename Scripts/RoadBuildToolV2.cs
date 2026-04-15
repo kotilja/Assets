@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 [ExecuteAlways]
-public class RoadNodeV2 : MonoBehaviour
+public class RoadBuildToolV2 : MonoBehaviour
 {
     public enum JunctionControlMode
     {
