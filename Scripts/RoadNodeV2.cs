@@ -120,6 +120,56 @@ public class RoadNodeV2 : MonoBehaviour
         return true;
     }
 
+    public bool TryGetApproachRule(RoadSegmentV2 incomingSegment, out ApproachRule rule)
+    {
+        rule = GetApproachRule(incomingSegment);
+        return rule != null;
+    }
+
+    public void SetApproachMovement(RoadSegmentV2 incomingSegment, RoadLaneConnectionV2.MovementType movementType, bool allowed)
+    {
+        ApproachRule rule = GetOrCreateApproachRule(incomingSegment);
+        if (rule == null)
+            return;
+
+        switch (movementType)
+        {
+            case RoadLaneConnectionV2.MovementType.Straight:
+                rule.allowStraight = allowed;
+                break;
+
+            case RoadLaneConnectionV2.MovementType.Left:
+                rule.allowLeft = allowed;
+                break;
+
+            case RoadLaneConnectionV2.MovementType.Right:
+                rule.allowRight = allowed;
+                break;
+        }
+    }
+
+    public void ToggleApproachMovement(RoadSegmentV2 incomingSegment, RoadLaneConnectionV2.MovementType movementType)
+    {
+        ApproachRule rule = GetOrCreateApproachRule(incomingSegment);
+        if (rule == null)
+            return;
+
+        switch (movementType)
+        {
+            case RoadLaneConnectionV2.MovementType.Straight:
+                rule.allowStraight = !rule.allowStraight;
+                break;
+
+            case RoadLaneConnectionV2.MovementType.Left:
+                rule.allowLeft = !rule.allowLeft;
+                break;
+
+            case RoadLaneConnectionV2.MovementType.Right:
+                rule.allowRight = !rule.allowRight;
+                break;
+        }
+    }
+
     private ApproachRule GetApproachRule(RoadSegmentV2 incomingSegment)
     {
         if (incomingSegment == null)
@@ -136,6 +186,27 @@ public class RoadNodeV2 : MonoBehaviour
         }
 
         return null;
+    }
+
+    private ApproachRule GetOrCreateApproachRule(RoadSegmentV2 incomingSegment)
+    {
+        if (incomingSegment == null)
+            return null;
+
+        ApproachRule rule = GetApproachRule(incomingSegment);
+        if (rule != null)
+            return rule;
+
+        rule = new ApproachRule
+        {
+            incomingSegment = incomingSegment,
+            allowStraight = allowStraight,
+            allowLeft = allowLeft,
+            allowRight = allowRight
+        };
+
+        approachRules.Add(rule);
+        return rule;
     }
 
     private void Awake()
