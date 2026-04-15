@@ -50,7 +50,9 @@ public class RoadNodeSignalV2 : MonoBehaviour
     [SerializeField] private float bodyWidth = 0.24f;
     [SerializeField] private float bodyHeight = 0.34f;
     [SerializeField] private float lampSize = 0.16f;
+    [SerializeField] private float signalScale = 5f;
     [SerializeField] private float signalSideOffset = 0.28f;
+    [SerializeField] private float extraRightOffset = 0.12f;
     [SerializeField] private float signalBackOffset = 0.08f;
     [SerializeField] private int bodySortingOrder = 60;
     [SerializeField] private int lampSortingOrder = 61;
@@ -292,7 +294,8 @@ public class RoadNodeSignalV2 : MonoBehaviour
         Vector3 right = new Vector3(dir.y, -dir.x, 0f);
 
         float roadHalfWidth = segment != null ? segment.TotalRoadWidth * 0.5f : 0f;
-        float sideOffset = roadHalfWidth + signalSideOffset + bodyWidth * 0.5f;
+        float scale = Mathf.Max(signalScale, 0.01f);
+        float sideOffset = roadHalfWidth + signalSideOffset + bodyWidth * scale * 0.5f + extraRightOffset;
 
         Vector3 pos =
             stopCenter
@@ -465,9 +468,10 @@ public class RoadNodeSignalV2 : MonoBehaviour
             head.rootObject.transform.rotation = Quaternion.identity;
             head.rootObject.transform.localScale = Vector3.one;
 
-            float visibleBodyWidth = Mathf.Max(bodyWidth, 0.24f);
-            float visibleBodyHeight = Mathf.Max(bodyHeight, 0.34f);
-            float visibleLampSize = Mathf.Max(lampSize, 0.16f);
+            float scale = Mathf.Max(signalScale, 0.01f);
+            float visibleBodyWidth = Mathf.Max(bodyWidth, 0.24f) * scale;
+            float visibleBodyHeight = Mathf.Max(bodyHeight, 0.34f) * scale;
+            float visibleLampSize = Mathf.Max(lampSize, 0.16f) * scale;
 
             if (head.bodyRenderer != null)
             {
