@@ -83,6 +83,11 @@ public class RoadNodeSignalV2 : MonoBehaviour
         SyncFromNode();
     }
 
+    private void Start()
+    {
+        SyncFromNode();
+    }
+
     private void OnValidate()
     {
 #if UNITY_EDITOR
@@ -535,7 +540,7 @@ public class RoadNodeSignalV2 : MonoBehaviour
         bool inPhase2 = phase2IncomingSegments.Contains(incomingSegment);
 
         if (!inPhase1 && !inPhase2)
-            return true;
+            return false;
 
         switch (currentState)
         {
@@ -581,7 +586,7 @@ public class RoadNodeSignalV2 : MonoBehaviour
         bool inPhase2 = phase2IncomingSegments.Contains(incomingSegment);
 
         if (!inPhase1 && !inPhase2)
-            return LampState.Green;
+            return LampState.Red;
 
         switch (currentState)
         {

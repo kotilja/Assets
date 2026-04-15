@@ -51,6 +51,11 @@ public class RoadNetworkV2 : MonoBehaviour
     public IReadOnlyList<RoadLaneDataV2> AllLanes => allLanes;
     public IReadOnlyList<RoadLaneConnectionV2> AllConnections => allConnections;
 
+    private void Start()
+    {
+        RefreshAll();
+    }
+
     public void RefreshAll()
     {
         CleanupNulls();
