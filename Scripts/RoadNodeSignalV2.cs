@@ -1,6 +1,10 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
+
 [ExecuteAlways]
 public class RoadNodeSignalV2 : MonoBehaviour
 {
@@ -63,6 +67,10 @@ public class RoadNodeSignalV2 : MonoBehaviour
     private Transform signalsRoot;
     private readonly Dictionary<int, SignalHeadVisual> signalHeads = new Dictionary<int, SignalHeadVisual>();
 
+#if UNITY_EDITOR
+    private bool delayedSyncQueued;
+#endif
+
     private static Sprite cachedSprite;
 
     private void OnEnable()
@@ -77,8 +85,34 @@ public class RoadNodeSignalV2 : MonoBehaviour
 
     private void OnValidate()
     {
+#if UNITY_EDITOR
+        if (Application.isPlaying)
+        {
+            SyncFromNode();
+            return;
+        }
+
+        if (delayedSyncQueued)
+            return;
+
+        delayedSyncQueued = true;
+        EditorApplication.delayCall += DelayedEditorSync;
+#else
+        SyncFromNode();
+#endif
+    }
+
+#if UNITY_EDITOR
+    private void DelayedEditorSync()
+    {
+        delayedSyncQueued = false;
+
+        if (this == null)
+            return;
+
         SyncFromNode();
     }
+#endif
 
     private void Update()
     {
@@ -90,7 +124,7 @@ public class RoadNodeSignalV2 : MonoBehaviour
 
         if (!node.UsesTrafficLight)
         {
-            SetSignalsVisible(false);
+            HideAllHeads();
             return;
         }
 
@@ -370,10 +404,12 @@ public class RoadNodeSignalV2 : MonoBehaviour
             return;
 
         bool visible = node.UsesTrafficLight;
-        SetSignalsVisible(visible);
 
         if (!visible)
+        {
+            HideAllHeads();
             return;
+        }
 
         EnsureSignalHeads();
 
@@ -382,6 +418,8 @@ public class RoadNodeSignalV2 : MonoBehaviour
             SignalHeadVisual head = pair.Value;
             if (head == null || head.segment == null || head.rootObject == null)
                 continue;
+
+            SetHeadVisible(head, true);
 
             Vector3 pos = GetSignalHeadPosition(head.segment);
             head.rootObject.transform.position = pos;
@@ -401,10 +439,28 @@ public class RoadNodeSignalV2 : MonoBehaviour
         }
     }
 
-    private void SetSignalsVisible(bool visible)
+    private void HideAllHeads()
     {
-        if (signalsRoot != null)
-            signalsRoot.gameObject.SetActive(visible);
+        foreach (KeyValuePair<int, SignalHeadVisual> pair in signalHeads)
+        {
+            SignalHeadVisual head = pair.Value;
+            if (head == null)
+                continue;
+
+            SetHeadVisible(head, false);
+        }
+    }
+
+    private void SetHeadVisible(SignalHeadVisual head, bool visible)
+    {
+        if (head == null)
+            return;
+
+        if (head.bodyRenderer != null)
+            head.bodyRenderer.enabled = visible;
+
+        if (head.lampRenderer != null)
+            head.lampRenderer.enabled = visible;
     }
 
     private void SwitchState(CycleState newState)
@@ -437,6 +493,9 @@ public class RoadNodeSignalV2 : MonoBehaviour
 
         bool inPhase1 = phase1IncomingSegments.Contains(incomingSegment);
         bool inPhase2 = phase2IncomingSegments.Contains(incomingSegment);
+
+        if (!inPhase1 && !inPhase2)
+            return true;
 
         switch (currentState)
         {
@@ -480,6 +539,9 @@ public class RoadNodeSignalV2 : MonoBehaviour
 
         bool inPhase1 = phase1IncomingSegments.Contains(incomingSegment);
         bool inPhase2 = phase2IncomingSegments.Contains(incomingSegment);
+
+        if (!inPhase1 && !inPhase2)
+            return LampState.Green;
 
         switch (currentState)
         {
