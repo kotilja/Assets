@@ -124,8 +124,19 @@ public class RoadBuildToolV2Editor : Editor
         EditorGUILayout.Space(8f);
         EditorGUILayout.LabelField("Редактор ручных связей полос", EditorStyles.boldLabel);
 
-        EditorGUILayout.ObjectField("Входящая полоса", Tool.SelectedFromLane, typeof(RoadLaneDataV2), false);
-        EditorGUILayout.ObjectField("Выходящая полоса", Tool.SelectedToLane, typeof(RoadLaneDataV2), false);
+        EditorGUILayout.LabelField(
+            "Входящая полоса",
+            Tool.SelectedFromLane != null
+                ? GetLaneLabel(Tool.SelectedFromLane)
+                : "не выбрана"
+        );
+
+        EditorGUILayout.LabelField(
+            "Выходящая полоса",
+            Tool.SelectedToLane != null
+                ? GetLaneLabel(Tool.SelectedToLane)
+                : "не выбрана"
+        );
 
         if (Tool.SelectedFromLane == null)
         {
@@ -349,6 +360,17 @@ public class RoadBuildToolV2Editor : Editor
                 Handles.DrawWireDisc(Tool.SelectedToLane.MidPoint, Vector3.forward, 0.10f);
             }
         }
+    private string GetLaneLabel(RoadLaneDataV2 lane)
+    {
+        if (lane == null)
+            return "null";
+
+        string segmentName = lane.ownerSegment != null ? lane.ownerSegment.name : "no-segment";
+        string fromName = lane.fromNode != null ? lane.fromNode.name : "null";
+        string toName = lane.toNode != null ? lane.toNode.name : "null";
+
+        return $"LaneId={lane.laneId}, {segmentName}, {fromName} -> {toName}, idx={lane.localLaneIndex}";
+    }
 
     private Vector3 GetWorldPointOnPlane(Vector2 mousePosition)
     {
