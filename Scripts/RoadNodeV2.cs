@@ -314,6 +314,7 @@ public class RoadNodeV2 : MonoBehaviour
             100f
         );
 
+
         return cachedSprite;
     }
 }
