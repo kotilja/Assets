@@ -47,11 +47,11 @@ public class RoadNodeSignalV2 : MonoBehaviour
     [SerializeField] private bool allowRightOnGreen = true;
 
     [Header("Visuals")]
-    [SerializeField] private float bodyWidth = 0.16f;
-    [SerializeField] private float bodyHeight = 0.24f;
-    [SerializeField] private float lampSize = 0.10f;
-    [SerializeField] private float signalSideOffset = 0.22f;
-    [SerializeField] private float signalBackOffset = 0.05f;
+    [SerializeField] private float bodyWidth = 0.24f;
+    [SerializeField] private float bodyHeight = 0.34f;
+    [SerializeField] private float lampSize = 0.16f;
+    [SerializeField] private float signalSideOffset = 0.28f;
+    [SerializeField] private float signalBackOffset = 0.08f;
     [SerializeField] private int bodySortingOrder = 60;
     [SerializeField] private int lampSortingOrder = 61;
     [SerializeField] private Color bodyColor = new Color(0.12f, 0.12f, 0.12f, 1f);
@@ -113,6 +113,21 @@ public class RoadNodeSignalV2 : MonoBehaviour
         SyncFromNode();
     }
 #endif
+
+    private void OnDestroy()
+    {
+        if (signalsRoot != null)
+        {
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+                DestroyImmediate(signalsRoot.gameObject);
+            else
+                Destroy(signalsRoot.gameObject);
+#else
+            Destroy(signalsRoot.gameObject);
+#endif
+        }
+    }
 
     private void Update()
     {
@@ -282,20 +297,34 @@ public class RoadNodeSignalV2 : MonoBehaviour
 
     private void EnsureSignalsRoot()
     {
+        string rootName = $"SignalHeads_Node_{GetInstanceID()}";
+
         if (signalsRoot != null)
             return;
 
-        Transform existing = transform.Find("SignalHeads");
-        if (existing != null)
+        Transform parent = transform.parent;
+
+        if (parent != null)
         {
-            signalsRoot = existing;
-            return;
+            Transform existing = parent.Find(rootName);
+            if (existing != null)
+            {
+                signalsRoot = existing;
+                return;
+            }
         }
 
-        GameObject root = new GameObject("SignalHeads");
-        root.transform.SetParent(transform);
-        root.transform.localPosition = Vector3.zero;
-        root.transform.localRotation = Quaternion.identity;
+        GameObject root = new GameObject(rootName);
+
+        if (parent != null)
+            root.transform.SetParent(parent);
+        else
+            root.transform.SetParent(null);
+
+        root.transform.position = Vector3.zero;
+        root.transform.rotation = Quaternion.identity;
+        root.transform.localScale = Vector3.one;
+
         signalsRoot = root.transform;
     }
 
@@ -373,6 +402,7 @@ public class RoadNodeSignalV2 : MonoBehaviour
         root.transform.SetParent(signalsRoot);
         root.transform.localPosition = Vector3.zero;
         root.transform.localRotation = Quaternion.identity;
+        root.transform.localScale = Vector3.one;
 
         SpriteRenderer body = root.AddComponent<SpriteRenderer>();
         body.sprite = GetWhiteSprite();
@@ -382,6 +412,7 @@ public class RoadNodeSignalV2 : MonoBehaviour
         lampObject.transform.SetParent(root.transform);
         lampObject.transform.localPosition = Vector3.zero;
         lampObject.transform.localRotation = Quaternion.identity;
+        lampObject.transform.localScale = Vector3.one;
 
         SpriteRenderer lamp = lampObject.AddComponent<SpriteRenderer>();
         lamp.sprite = GetWhiteSprite();
@@ -423,6 +454,8 @@ public class RoadNodeSignalV2 : MonoBehaviour
 
             Vector3 pos = GetSignalHeadPosition(head.segment);
             head.rootObject.transform.position = pos;
+            head.rootObject.transform.rotation = Quaternion.identity;
+            head.rootObject.transform.localScale = Vector3.one;
 
             if (head.bodyRenderer != null)
             {
