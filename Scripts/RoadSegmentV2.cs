@@ -297,14 +297,8 @@ private void OnDestroy()
             Vector3 laneStart = rawLaneStart + direction * startCut;
             Vector3 laneEnd = rawLaneEnd - direction * endCut;
 
-            UpdateArrowVisual(
-                arrowRenderers[laneCounter],
-                laneStart,
-                laneEnd,
-                guidanceArrowColor,
-                $"Arrow_Forward_{i}",
-                GetArrowSprite(1)
-            );
+            if (arrowRenderers[laneCounter] != null)
+                arrowRenderers[laneCounter].enabled = false;
 
             RoadLaneDataV2 lane = laneData[laneCounter];
             lane.laneId = globalLaneIdSeed + laneCounter;
@@ -330,14 +324,8 @@ private void OnDestroy()
             Vector3 trimmedForwardStart = rawStart + direction * startCut;
             Vector3 trimmedForwardEnd = rawEnd - direction * endCut;
 
-            UpdateArrowVisual(
-                arrowRenderers[laneCounter],
-                trimmedForwardEnd,
-                trimmedForwardStart,
-                guidanceArrowColor,
-                $"Arrow_Backward_{i}",
-                GetArrowSprite(1)
-            );
+            if (arrowRenderers[laneCounter] != null)
+                arrowRenderers[laneCounter].enabled = false;
 
             RoadLaneDataV2 lane = laneData[laneCounter];
             lane.laneId = globalLaneIdSeed + laneCounter;
