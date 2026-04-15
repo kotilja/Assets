@@ -41,6 +41,8 @@ public class RoadSegmentV2 : MonoBehaviour
     [SerializeField] private int arrowSortingOrder = 50;
     [SerializeField] private float arrowZOffset = -0.1f;
     [SerializeField] private float arrowAngleOffset = 180f;
+    [SerializeField] private float arrowPositionT = 0.78f;
+    [SerializeField] private Color guidanceArrowColor = new Color(1f, 1f, 1f, 0.95f);
 
     [Header("Lane change")]
     [SerializeField] private bool allowLaneChanges = true;
@@ -59,7 +61,7 @@ public class RoadSegmentV2 : MonoBehaviour
     private readonly List<SpriteRenderer> arrowRenderers = new List<SpriteRenderer>();
     private readonly List<RoadLaneDataV2> laneData = new List<RoadLaneDataV2>();
 
-    private static Sprite cachedArrowSprite;
+    private static readonly Dictionary<int, Sprite> cachedArrowSprites = new Dictionary<int, Sprite>();
 
     public int Id => id;
     public RoadNodeV2 StartNode => startNode;
@@ -180,6 +182,90 @@ private void OnDestroy()
         RebuildLaneVisualsAndData(start, end);
     }
 
+    public void RefreshDirectionArrows()
+    {
+        if (!showLaneArrows)
+        {
+            for (int i = 0; i < arrowRenderers.Count; i++)
+            {
+                if (arrowRenderers[i] != null)
+                    arrowRenderers[i].enabled = false;
+            }
+
+            return;
+        }
+
+        int count = Mathf.Min(laneData.Count, arrowRenderers.Count);
+
+        for (int i = 0; i < count; i++)
+        {
+            RoadLaneDataV2 lane = laneData[i];
+            SpriteRenderer arrowRenderer = arrowRenderers[i];
+
+            if (lane == null || arrowRenderer == null)
+                continue;
+
+            int movementMask = GetLaneMovementMask(lane);
+
+            if (movementMask == 0)
+            {
+                arrowRenderer.enabled = false;
+                continue;
+            }
+
+            UpdateArrowVisual(
+                arrowRenderers[laneCounter],
+                laneStart,
+                laneEnd,
+                guidanceArrowColor,
+                $"Arrow_Forward_{i}",
+                GetArrowSprite(1)
+            );
+        }
+
+        for (int i = count; i < arrowRenderers.Count; i++)
+        {
+            if (arrowRenderers[i] != null)
+                arrowRenderers[i].enabled = false;
+        }
+    }
+
+    private int GetLaneMovementMask(RoadLaneDataV2 lane)
+    {
+        if (lane == null)
+            return 0;
+
+        int mask = 0;
+
+        for (int i = 0; i < lane.outgoingConnections.Count; i++)
+        {
+            RoadLaneConnectionV2 connection = lane.outgoingConnections[i];
+            if (connection == null || !connection.IsValid)
+                continue;
+
+            if (connection.connectionKind != RoadLaneConnectionV2.ConnectionKind.Junction)
+                continue;
+
+            switch (connection.movementType)
+            {
+                case RoadLaneConnectionV2.MovementType.Straight:
+                    mask |= 1;
+                    break;
+
+                case RoadLaneConnectionV2.MovementType.Left:
+                    mask |= 2;
+                    break;
+
+                case RoadLaneConnectionV2.MovementType.Right:
+                    mask |= 4;
+                    break;
+            }
+        }
+
+        return mask;
+    }
+
+
     private void RebuildLaneVisualsAndData(Vector3 start, Vector3 end)
     {
         EnsureLaneObjectsCount(GetLaneMarkingCount());
@@ -214,10 +300,11 @@ private void OnDestroy()
 
             UpdateArrowVisual(
                 arrowRenderers[laneCounter],
-                laneStart,
-                laneEnd,
-                forwardLaneColor,
-                $"Arrow_Forward_{i}"
+                trimmedForwardEnd,
+                trimmedForwardStart,
+                guidanceArrowColor,
+                $"Arrow_Backward_{i}",
+                GetArrowSprite(1)
             );
 
             RoadLaneDataV2 lane = laneData[laneCounter];
@@ -562,24 +649,31 @@ private void OnDestroy()
             laneData.RemoveRange(targetCount, laneData.Count - targetCount);
     }
 
-    private void UpdateArrowVisual(SpriteRenderer arrowRenderer, Vector3 from, Vector3 to, Color color, string objectName)
+    private void UpdateArrowVisual(
+    SpriteRenderer arrowRenderer,
+    Vector3 from,
+    Vector3 to,
+    Color color,
+    string objectName,
+    Sprite sprite)
     {
         if (arrowRenderer == null)
             return;
 
         arrowRenderer.gameObject.name = objectName;
-        arrowRenderer.enabled = showLaneArrows;
+        arrowRenderer.enabled = showLaneArrows && sprite != null;
 
-        if (!showLaneArrows)
+        if (!arrowRenderer.enabled)
             return;
 
-        arrowRenderer.sprite = GetArrowSprite();
+        arrowRenderer.sprite = sprite;
         arrowRenderer.color = color;
         arrowRenderer.sortingOrder = arrowSortingOrder;
 
-        Vector3 center = Vector3.Lerp(from, to, 0.5f);
         Vector3 direction = (to - from).normalized;
-        float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg + arrowAngleOffset;
+        Vector3 center = Vector3.Lerp(from, to, Mathf.Clamp01(arrowPositionT));
+
+        float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg + arrowAngleOffset - 180f;
 
         arrowRenderer.transform.position = new Vector3(center.x, center.y, arrowZOffset);
         arrowRenderer.transform.rotation = Quaternion.Euler(0f, 0f, angle);
@@ -732,48 +826,138 @@ private void OnDestroy()
         lanesRoot = root.transform;
     }
 
-    private static Sprite GetArrowSprite()
+    private static Sprite GetArrowSprite(int movementMask)
     {
-        if (cachedArrowSprite != null)
-            return cachedArrowSprite;
+        if (movementMask == 0)
+            return null;
 
-        Texture2D texture = new Texture2D(32, 16, TextureFormat.RGBA32, false);
+        if (cachedArrowSprites.TryGetValue(movementMask, out Sprite cached) && cached != null)
+            return cached;
+
+        const int width = 64;
+        const int height = 64;
+
+        Texture2D texture = new Texture2D(width, height, TextureFormat.RGBA32, false);
         texture.filterMode = FilterMode.Point;
 
         Color clear = new Color(0f, 0f, 0f, 0f);
         Color white = Color.white;
 
-        for (int y = 0; y < 16; y++)
+        for (int y = 0; y < height; y++)
         {
-            for (int x = 0; x < 32; x++)
+            for (int x = 0; x < width; x++)
                 texture.SetPixel(x, y, clear);
         }
 
-        for (int x = 0; x < 22; x++)
-        {
-            for (int y = 6; y <= 9; y++)
-                texture.SetPixel(x, y, white);
-        }
+        if ((movementMask & 1) != 0)
+            DrawStraightArrow(texture, white);
 
-        for (int x = 20; x < 32; x++)
-        {
-            int half = x - 20;
-            int minY = Mathf.Max(0, 8 - half);
-            int maxY = Mathf.Min(15, 8 + half);
+        if ((movementMask & 2) != 0)
+            DrawLeftArrow(texture, white);
 
-            for (int y = minY; y <= maxY; y++)
-                texture.SetPixel(x, y, white);
-        }
+        if ((movementMask & 4) != 0)
+            DrawRightArrow(texture, white);
 
         texture.Apply();
 
-        cachedArrowSprite = Sprite.Create(
+        Sprite sprite = Sprite.Create(
             texture,
-            new Rect(0f, 0f, texture.width, texture.height),
+            new Rect(0f, 0f, width, height),
             new Vector2(0.5f, 0.5f),
-            32f
+            64f
         );
 
-        return cachedArrowSprite;
+        cachedArrowSprites[movementMask] = sprite;
+        return sprite;
+    }
+
+    private static void DrawStraightArrow(Texture2D texture, Color color)
+    {
+        DrawLine(texture, 8, 32, 54, 32, 3, color);
+        DrawArrowHead(texture, 54, 32, 1, 0, 8, color);
+    }
+
+    private static void DrawLeftArrow(Texture2D texture, Color color)
+    {
+        DrawLine(texture, 8, 32, 34, 32, 3, color);
+        DrawLine(texture, 34, 32, 34, 54, 3, color);
+        DrawArrowHead(texture, 34, 54, 0, 1, 8, color);
+    }
+
+    private static void DrawRightArrow(Texture2D texture, Color color)
+    {
+        DrawLine(texture, 8, 32, 34, 32, 3, color);
+        DrawLine(texture, 34, 32, 34, 10, 3, color);
+        DrawArrowHead(texture, 34, 10, 0, -1, 8, color);
+    }
+
+    private static void DrawArrowHead(Texture2D texture, int x, int y, int dirX, int dirY, int size, Color color)
+    {
+        if (dirX == 1 && dirY == 0)
+        {
+            DrawLine(texture, x, y, x - size, y + size / 2, 3, color);
+            DrawLine(texture, x, y, x - size, y - size / 2, 3, color);
+        }
+        else if (dirX == 0 && dirY == 1)
+        {
+            DrawLine(texture, x, y, x - size / 2, y - size, 3, color);
+            DrawLine(texture, x, y, x + size / 2, y - size, 3, color);
+        }
+        else if (dirX == 0 && dirY == -1)
+        {
+            DrawLine(texture, x, y, x - size / 2, y + size, 3, color);
+            DrawLine(texture, x, y, x + size / 2, y + size, 3, color);
+        }
+    }
+
+    private static void DrawLine(Texture2D texture, int x0, int y0, int x1, int y1, int thickness, Color color)
+    {
+        int dx = Mathf.Abs(x1 - x0);
+        int dy = Mathf.Abs(y1 - y0);
+        int sx = x0 < x1 ? 1 : -1;
+        int sy = y0 < y1 ? 1 : -1;
+        int err = dx - dy;
+
+        while (true)
+        {
+            DrawThickPixel(texture, x0, y0, thickness, color);
+
+            if (x0 == x1 && y0 == y1)
+                break;
+
+            int e2 = 2 * err;
+
+            if (e2 > -dy)
+            {
+                err -= dy;
+                x0 += sx;
+            }
+
+            if (e2 < dx)
+            {
+                err += dx;
+                y0 += sy;
+            }
+        }
+    }
+
+    private static void DrawThickPixel(Texture2D texture, int x, int y, int radius, Color color)
+    {
+        for (int oy = -radius; oy <= radius; oy++)
+        {
+            for (int ox = -radius; ox <= radius; ox++)
+            {
+                if (ox * ox + oy * oy > radius * radius)
+                    continue;
+
+                int px = x + ox;
+                int py = y + oy;
+
+                if (px < 0 || px >= texture.width || py < 0 || py >= texture.height)
+                    continue;
+
+                texture.SetPixel(px, py, color);
+            }
+        }
     }
 }

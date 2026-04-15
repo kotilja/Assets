@@ -68,6 +68,12 @@ public class RoadNetworkV2 : MonoBehaviour
 
         SyncNodeSignals();
         RebuildLaneGraph();
+
+        foreach (RoadSegmentV2 segment in segments)
+        {
+            if (segment != null)
+                segment.RefreshDirectionArrows();
+        }
     }
 
     private void SyncNodeSignals()
