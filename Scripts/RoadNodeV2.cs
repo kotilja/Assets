@@ -10,16 +10,28 @@ public class RoadNodeV2 : MonoBehaviour
         TrafficLight
     }
 
+    [System.Serializable]
+    public class ApproachRule
+    {
+        public RoadSegmentV2 incomingSegment;
+        public bool allowStraight = true;
+        public bool allowLeft = true;
+        public bool allowRight = true;
+    }
+
     [SerializeField] private int id;
     [SerializeField] private float visualSize = 0.22f;
 
     [Header("Junction control")]
     [SerializeField] private JunctionControlMode controlMode = JunctionControlMode.RightHandRule;
 
-    [Header("Junction rules")]
+    [Header("Default junction rules")]
     [SerializeField] private bool allowStraight = true;
     [SerializeField] private bool allowLeft = true;
     [SerializeField] private bool allowRight = true;
+
+    [Header("Per-approach rules")]
+    [SerializeField] private List<ApproachRule> approachRules = new List<ApproachRule>();
 
     private readonly List<RoadSegmentV2> connectedSegments = new List<RoadSegmentV2>();
     private SpriteRenderer spriteRenderer;
@@ -52,6 +64,7 @@ public class RoadNodeV2 : MonoBehaviour
         if (!connectedSegments.Contains(segment))
         {
             connectedSegments.Add(segment);
+            EnsureApproachRuleEntries();
             EnsureVisual();
         }
     }
@@ -62,7 +75,10 @@ public class RoadNodeV2 : MonoBehaviour
             return;
 
         if (connectedSegments.Remove(segment))
+        {
+            RemoveApproachRuleEntriesForMissingSegments();
             EnsureVisual();
+        }
     }
 
     public void SetControlMode(JunctionControlMode mode)
@@ -82,29 +98,110 @@ public class RoadNodeV2 : MonoBehaviour
 
     public bool AllowsMovement(RoadLaneConnectionV2.MovementType movementType)
     {
+        return AllowsMovement(null, movementType);
+    }
+
+    public bool AllowsMovement(RoadSegmentV2 incomingSegment, RoadLaneConnectionV2.MovementType movementType)
+    {
+        ApproachRule rule = GetApproachRule(incomingSegment);
+
         switch (movementType)
         {
             case RoadLaneConnectionV2.MovementType.Straight:
-                return allowStraight;
+                return rule != null ? rule.allowStraight : allowStraight;
 
             case RoadLaneConnectionV2.MovementType.Left:
-                return allowLeft;
+                return rule != null ? rule.allowLeft : allowLeft;
 
             case RoadLaneConnectionV2.MovementType.Right:
-                return allowRight;
+                return rule != null ? rule.allowRight : allowRight;
         }
 
         return true;
     }
 
+    private ApproachRule GetApproachRule(RoadSegmentV2 incomingSegment)
+    {
+        if (incomingSegment == null)
+            return null;
+
+        for (int i = 0; i < approachRules.Count; i++)
+        {
+            ApproachRule rule = approachRules[i];
+            if (rule == null)
+                continue;
+
+            if (rule.incomingSegment == incomingSegment)
+                return rule;
+        }
+
+        return null;
+    }
+
     private void Awake()
     {
+        EnsureApproachRuleEntries();
         EnsureVisual();
     }
 
     private void OnValidate()
     {
+        EnsureApproachRuleEntries();
+        RemoveApproachRuleEntriesForMissingSegments();
         EnsureVisual();
+    }
+
+    private void EnsureApproachRuleEntries()
+    {
+        for (int i = 0; i < connectedSegments.Count; i++)
+        {
+            RoadSegmentV2 segment = connectedSegments[i];
+            if (segment == null)
+                continue;
+
+            bool hasRule = false;
+
+            for (int j = 0; j < approachRules.Count; j++)
+            {
+                ApproachRule rule = approachRules[j];
+                if (rule == null)
+                    continue;
+
+                if (rule.incomingSegment == segment)
+                {
+                    hasRule = true;
+                    break;
+                }
+            }
+
+            if (!hasRule)
+            {
+                approachRules.Add(new ApproachRule
+                {
+                    incomingSegment = segment,
+                    allowStraight = allowStraight,
+                    allowLeft = allowLeft,
+                    allowRight = allowRight
+                });
+            }
+        }
+    }
+
+    private void RemoveApproachRuleEntriesForMissingSegments()
+    {
+        for (int i = approachRules.Count - 1; i >= 0; i--)
+        {
+            ApproachRule rule = approachRules[i];
+
+            if (rule == null || rule.incomingSegment == null)
+            {
+                approachRules.RemoveAt(i);
+                continue;
+            }
+
+            if (!connectedSegments.Contains(rule.incomingSegment))
+                approachRules.RemoveAt(i);
+        }
     }
 
     private void EnsureVisual()

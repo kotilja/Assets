@@ -427,7 +427,7 @@ public class RoadNetworkV2 : MonoBehaviour
         float turnScore = CalculateTurnScore(fromLane, toLane);
         RoadLaneConnectionV2.MovementType movementType = GetMovementType(turnScore);
 
-        if (!node.AllowsMovement(movementType))
+        if (!node.AllowsMovement(fromLane.ownerSegment, movementType))
             return;
 
         RoadLaneConnectionV2 connection = new RoadLaneConnectionV2
