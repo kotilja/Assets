@@ -3,10 +3,11 @@ using UnityEngine;
 
 public static class RoadPathfinderV2
 {
-    private class NodeStep
+    private class DirectedLeg
     {
-        public RoadNodeV2 previousNode;
-        public RoadSegmentV2 viaSegment;
+        public RoadNodeV2 fromNode;
+        public RoadNodeV2 toNode;
+        public RoadSegmentV2 segment;
     }
 
     private class LegInfo
@@ -15,6 +16,12 @@ public static class RoadPathfinderV2
         public RoadNodeV2 toNode;
         public RoadSegmentV2 segment;
         public List<RoadLaneDataV2> candidates = new List<RoadLaneDataV2>();
+    }
+
+    private class PathCandidate
+    {
+        public List<RoadNodeV2> nodes = new List<RoadNodeV2>();
+        public List<DirectedLeg> legs = new List<DirectedLeg>();
     }
 
     public static bool TryFindPath(
@@ -31,131 +38,135 @@ public static class RoadPathfinderV2
         if (startNode == targetNode)
             return false;
 
-        if (!TryBuildNodePath(network, startNode, targetNode, out List<RoadNodeV2> nodePath, out Dictionary<RoadNodeV2, NodeStep> cameFrom))
+        Dictionary<RoadNodeV2, List<DirectedLeg>> outgoingByNode = BuildOutgoingLegs(network);
+
+        if (!outgoingByNode.TryGetValue(startNode, out List<DirectedLeg> startOutgoing) || startOutgoing.Count == 0)
             return false;
 
-        return TryBuildLanePathFromNodePath(nodePath, cameFrom, out lanePath);
-    }
+        Queue<PathCandidate> queue = new Queue<PathCandidate>();
+        PathCandidate initial = new PathCandidate();
+        initial.nodes.Add(startNode);
+        queue.Enqueue(initial);
 
-    private static bool TryBuildNodePath(
-        RoadNetworkV2 network,
-        RoadNodeV2 startNode,
-        RoadNodeV2 targetNode,
-        out List<RoadNodeV2> nodePath,
-        out Dictionary<RoadNodeV2, NodeStep> cameFrom)
-    {
-        nodePath = null;
-        cameFrom = new Dictionary<RoadNodeV2, NodeStep>();
+        int maxDepth = Mathf.Max(2, network.Nodes.Count + 2);
+        int safetyCounter = 0;
+        const int maxIterations = 10000;
 
-        Queue<RoadNodeV2> queue = new Queue<RoadNodeV2>();
-        HashSet<RoadNodeV2> visited = new HashSet<RoadNodeV2>();
-
-        queue.Enqueue(startNode);
-        visited.Add(startNode);
-
-        bool found = false;
-
-        while (queue.Count > 0)
+        while (queue.Count > 0 && safetyCounter < maxIterations)
         {
-            RoadNodeV2 currentNode = queue.Dequeue();
+            safetyCounter++;
+
+            PathCandidate candidate = queue.Dequeue();
+            RoadNodeV2 currentNode = candidate.nodes[candidate.nodes.Count - 1];
 
             if (currentNode == targetNode)
             {
-                found = true;
-                break;
+                if (TryBuildLanePathFromLegs(candidate.legs, out lanePath))
+                    return true;
+
+                continue;
             }
 
-            foreach (RoadSegmentV2 segment in network.Segments)
+            if (candidate.legs.Count >= maxDepth)
+                continue;
+
+            if (!outgoingByNode.TryGetValue(currentNode, out List<DirectedLeg> outgoing))
+                continue;
+
+            for (int i = 0; i < outgoing.Count; i++)
             {
-                if (segment == null)
+                DirectedLeg leg = outgoing[i];
+                if (leg == null || leg.toNode == null || leg.segment == null)
                     continue;
 
-                RoadNodeV2 nextNode = null;
-                bool canTravel = false;
-
-                if (segment.StartNode == currentNode && segment.ForwardLanes > 0)
-                {
-                    nextNode = segment.EndNode;
-                    canTravel = true;
-                }
-                else if (segment.EndNode == currentNode && segment.BackwardLanes > 0)
-                {
-                    nextNode = segment.StartNode;
-                    canTravel = true;
-                }
-
-                if (!canTravel || nextNode == null)
+                if (candidate.nodes.Contains(leg.toNode))
                     continue;
 
-                if (visited.Contains(nextNode))
-                    continue;
+                PathCandidate next = new PathCandidate();
+                next.nodes.AddRange(candidate.nodes);
+                next.legs.AddRange(candidate.legs);
 
-                visited.Add(nextNode);
-                cameFrom[nextNode] = new NodeStep
-                {
-                    previousNode = currentNode,
-                    viaSegment = segment
-                };
+                next.nodes.Add(leg.toNode);
+                next.legs.Add(leg);
 
-                queue.Enqueue(nextNode);
+                queue.Enqueue(next);
             }
         }
 
-        if (!found)
-            return false;
-
-        nodePath = new List<RoadNodeV2>();
-        RoadNodeV2 current = targetNode;
-        nodePath.Add(current);
-
-        while (current != startNode)
-        {
-            if (!cameFrom.TryGetValue(current, out NodeStep step))
-                return false;
-
-            current = step.previousNode;
-            nodePath.Add(current);
-        }
-
-        nodePath.Reverse();
-        return nodePath.Count >= 2;
+        return false;
     }
 
-    private static bool TryBuildLanePathFromNodePath(
-        List<RoadNodeV2> nodePath,
-        Dictionary<RoadNodeV2, NodeStep> cameFrom,
+    private static Dictionary<RoadNodeV2, List<DirectedLeg>> BuildOutgoingLegs(RoadNetworkV2 network)
+    {
+        Dictionary<RoadNodeV2, List<DirectedLeg>> outgoingByNode = new Dictionary<RoadNodeV2, List<DirectedLeg>>();
+
+        foreach (RoadSegmentV2 segment in network.Segments)
+        {
+            if (segment == null)
+                continue;
+
+            if (segment.StartNode != null && segment.EndNode != null && segment.ForwardLanes > 0)
+                AddOutgoingLeg(outgoingByNode, segment.StartNode, segment.EndNode, segment);
+
+            if (segment.StartNode != null && segment.EndNode != null && segment.BackwardLanes > 0)
+                AddOutgoingLeg(outgoingByNode, segment.EndNode, segment.StartNode, segment);
+        }
+
+        return outgoingByNode;
+    }
+
+    private static void AddOutgoingLeg(
+        Dictionary<RoadNodeV2, List<DirectedLeg>> outgoingByNode,
+        RoadNodeV2 fromNode,
+        RoadNodeV2 toNode,
+        RoadSegmentV2 segment)
+    {
+        if (fromNode == null || toNode == null || segment == null)
+            return;
+
+        if (!outgoingByNode.TryGetValue(fromNode, out List<DirectedLeg> list))
+        {
+            list = new List<DirectedLeg>();
+            outgoingByNode[fromNode] = list;
+        }
+
+        list.Add(new DirectedLeg
+        {
+            fromNode = fromNode,
+            toNode = toNode,
+            segment = segment
+        });
+    }
+
+    private static bool TryBuildLanePathFromLegs(
+        List<DirectedLeg> directedLegs,
         out List<RoadLaneDataV2> lanePath)
     {
         lanePath = null;
 
+        if (directedLegs == null || directedLegs.Count == 0)
+            return false;
+
         List<LegInfo> legs = new List<LegInfo>();
 
-        for (int i = 0; i < nodePath.Count - 1; i++)
+        for (int i = 0; i < directedLegs.Count; i++)
         {
-            RoadNodeV2 fromNode = nodePath[i];
-            RoadNodeV2 toNode = nodePath[i + 1];
-
-            if (!cameFrom.TryGetValue(toNode, out NodeStep step))
+            DirectedLeg directedLeg = directedLegs[i];
+            if (directedLeg == null || directedLeg.segment == null || directedLeg.fromNode == null || directedLeg.toNode == null)
                 return false;
 
-            if (step.viaSegment == null)
-                return false;
-
-            List<RoadLaneDataV2> candidates = step.viaSegment.GetDrivingLanes(fromNode, toNode);
+            List<RoadLaneDataV2> candidates = directedLeg.segment.GetDrivingLanes(directedLeg.fromNode, directedLeg.toNode);
             if (candidates == null || candidates.Count == 0)
                 return false;
 
             legs.Add(new LegInfo
             {
-                fromNode = fromNode,
-                toNode = toNode,
-                segment = step.viaSegment,
+                fromNode = directedLeg.fromNode,
+                toNode = directedLeg.toNode,
+                segment = directedLeg.segment,
                 candidates = candidates
             });
         }
-
-        if (legs.Count == 0)
-            return false;
 
         Dictionary<RoadLaneDataV2, float>[] costToEnd = new Dictionary<RoadLaneDataV2, float>[legs.Count];
         Dictionary<RoadLaneDataV2, RoadLaneDataV2>[] nextChoice = new Dictionary<RoadLaneDataV2, RoadLaneDataV2>[legs.Count];
