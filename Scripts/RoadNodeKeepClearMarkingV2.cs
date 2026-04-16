@@ -8,7 +8,7 @@ public class RoadNodeKeepClearMarkingV2 : MonoBehaviour
 
     [Header("Visual")]
     [SerializeField] private Color markingColor = new Color(1f, 0.92f, 0.1f, 0.95f);
-    [SerializeField] private float lineWidth = 0.09f;
+    [SerializeField] private float lineWidth = 0.045f;
     [SerializeField] private float boxInset = 0.08f;
     [SerializeField] private float diagonalSpacing = 0.30f;
     [SerializeField] private int sortingOrder = 60;
