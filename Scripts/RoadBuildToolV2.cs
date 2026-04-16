@@ -30,6 +30,11 @@ public class RoadBuildToolV2 : MonoBehaviour
     [SerializeField] private float speedLimit = 3f;
     [SerializeField] private float snapDistance = 0.4f;
 
+    [Header("Draw assist")]
+    [SerializeField] private bool snapToExistingSegments = true;
+    [SerializeField] private float segmentSnapDistance = 0.35f;
+    [SerializeField] private float minDistanceFromCurrentStartForSegmentSnap = 0.12f;
+
     [Header("Delete tool")]
     [SerializeField] private float deletePickDistance = 0.25f;
 
@@ -66,6 +71,7 @@ public class RoadBuildToolV2 : MonoBehaviour
     public float DeletePickDistance => deletePickDistance;
     public float JunctionPickDistance => junctionPickDistance;
     public float ApproachPickDistance => approachPickDistance;
+    public float SegmentSnapDistance => segmentSnapDistance;
 
     public Color PreviewColor => previewColor;
     public Color DeletePreviewColor => deletePreviewColor;
@@ -101,6 +107,37 @@ public class RoadBuildToolV2 : MonoBehaviour
         }
     }
 
+    public Vector3 GetPreviewWorldPosition(Vector3 rawWorldPosition)
+    {
+        rawWorldPosition.z = 0f;
+
+        if (toolMode != ToolMode.DrawRoad)
+            return rawWorldPosition;
+
+        if (!snapToExistingSegments || network == null)
+            return rawWorldPosition;
+
+        if (currentStartNode == null)
+            return rawWorldPosition;
+
+        if (network.TryGetNearestPointOnSegment(
+            rawWorldPosition,
+            segmentSnapDistance,
+            out Vector3 snappedPoint,
+            out RoadSegmentV2 snappedSegment))
+        {
+            if (snappedSegment != null)
+            {
+                float distanceFromStart = Vector3.Distance(snappedPoint, currentStartNode.transform.position);
+
+                if (distanceFromStart >= minDistanceFromCurrentStartForSegmentSnap)
+                    return snappedPoint;
+            }
+        }
+
+        return rawWorldPosition;
+    }
+
     public void HandleSceneClick(Vector3 worldPosition)
     {
         if (!toolEnabled || network == null)
@@ -111,7 +148,7 @@ public class RoadBuildToolV2 : MonoBehaviour
         switch (toolMode)
         {
             case ToolMode.DrawRoad:
-                HandleDrawClick(worldPosition);
+                HandleDrawClick(GetPreviewWorldPosition(worldPosition));
                 break;
 
             case ToolMode.DeleteRoad:

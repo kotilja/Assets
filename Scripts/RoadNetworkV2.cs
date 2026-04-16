@@ -922,7 +922,55 @@ private void AddManualConnection(RoadNodeV2 node, RoadLaneDataV2 fromLane, RoadL
         return bestNode;
     }
 
-    
+    public bool TryGetNearestPointOnSegment(
+    Vector3 position,
+    float maxDistance,
+    out Vector3 snappedPoint,
+    out RoadSegmentV2 snappedSegment)
+    {
+        position.z = 0f;
+
+        snappedPoint = position;
+        snappedSegment = null;
+
+        float bestDistance = maxDistance;
+
+        foreach (RoadSegmentV2 segment in segments)
+        {
+            if (segment == null || segment.StartNode == null || segment.EndNode == null)
+                continue;
+
+            Vector3 a = segment.StartNode.transform.position;
+            Vector3 b = segment.EndNode.transform.position;
+
+            Vector3 candidate = ProjectPointOntoSegment(position, a, b);
+            float distance = Vector3.Distance(position, candidate);
+
+            if (distance <= bestDistance)
+            {
+                bestDistance = distance;
+                snappedPoint = candidate;
+                snappedSegment = segment;
+            }
+        }
+
+        return snappedSegment != null;
+    }
+
+    private Vector3 ProjectPointOntoSegment(Vector3 point, Vector3 a, Vector3 b)
+    {
+        Vector3 ab = b - a;
+
+        if (ab.sqrMagnitude < 0.0001f)
+            return a;
+
+        float t = Vector3.Dot(point - a, ab) / Vector3.Dot(ab, ab);
+        t = Mathf.Clamp01(t);
+
+        Vector3 projected = a + ab * t;
+        projected.z = 0f;
+        return projected;
+    }
 
     public RoadNodeV2 CreateNode(Vector3 position)
     {

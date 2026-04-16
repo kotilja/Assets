@@ -228,8 +228,11 @@ public class RoadBuildToolV2Editor : Editor
         if (e.type == EventType.Layout)
             HandleUtility.AddDefaultControl(controlId);
 
-        Vector3 worldPosition = GetWorldPointOnPlane(e.mousePosition);
+        Vector3 rawWorldPosition = GetWorldPointOnPlane(e.mousePosition);
+        Vector3 worldPosition = Tool.GetPreviewWorldPosition(rawWorldPosition);
+
         DrawPreview(worldPosition);
+        DrawDrawAssistOverlay(rawWorldPosition, worldPosition);
         DrawTurnSelectionOverlay();
         DrawLaneConnectionOverlay();
 
@@ -294,6 +297,22 @@ public class RoadBuildToolV2Editor : Editor
                 Handles.DrawWireDisc(worldPosition, Vector3.forward, Tool.LanePickDistance);
                  break;
         }
+    }
+
+    private void DrawDrawAssistOverlay(Vector3 rawWorldPosition, Vector3 snappedWorldPosition)
+    {
+        if (Tool.CurrentToolMode != RoadBuildToolV2.ToolMode.DrawRoad)
+            return;
+
+        if (!Tool.HasCurrentStartNode)
+            return;
+
+        if (Vector3.Distance(rawWorldPosition, snappedWorldPosition) < 0.001f)
+            return;
+
+        Handles.color = new Color(1f, 0.8f, 0.2f, 1f);
+        Handles.DrawDottedLine(rawWorldPosition, snappedWorldPosition, 3f);
+        Handles.DrawWireDisc(snappedWorldPosition, Vector3.forward, 0.08f);
     }
 
     private void DrawTurnSelectionOverlay()
