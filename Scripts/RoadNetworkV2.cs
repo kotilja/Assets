@@ -1384,7 +1384,7 @@ private void DeleteNodeIfOrphaned(RoadNodeV2 node)
         );
 
         return merged != null;
-
+    }
     private RoadNodeV2 GetOtherNode(RoadSegmentV2 segment, RoadNodeV2 node)
     {
         if (segment == null || node == null)
