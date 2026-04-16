@@ -81,7 +81,7 @@ private class ManualLaneConnectionProfile
 
         SyncNodeSignals();
         RebuildLaneGraph();
-        PruneDeadNetworkReferences();
+        CleanupNulls();
 
         foreach (RoadSegmentV2 segment in segments)
         {
