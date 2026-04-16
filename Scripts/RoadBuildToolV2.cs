@@ -12,6 +12,7 @@ public class RoadBuildToolV2 : MonoBehaviour
         DrawRoad,
         DeleteRoad,
         JunctionControl,
+        JunctionKeepClear,
         JunctionTurns,
         LaneConnections
     }
@@ -159,6 +160,10 @@ public class RoadBuildToolV2 : MonoBehaviour
                 HandleJunctionControlClick(worldPosition);
                 break;
 
+            case ToolMode.JunctionKeepClear:
+                HandleJunctionKeepClearClick(worldPosition);
+                break;
+
             case ToolMode.JunctionTurns:
                 HandleJunctionTurnsClick(worldPosition);
                 break;
@@ -281,6 +286,31 @@ public class RoadBuildToolV2 : MonoBehaviour
 
         selectedTurnNode = node;
         selectedIncomingSegment = FindNearestIncomingSegment(node, worldPosition, approachPickDistance);
+    }
+
+    public void HandleJunctionKeepClearClick(Vector3 worldPosition)
+    {
+        if (!toolEnabled || network == null)
+            return;
+
+        currentStartNode = null;
+
+        RoadNodeV2 node = network.GetNearestIntersectionNode(worldPosition, junctionPickDistance);
+        if (node == null)
+            return;
+
+#if UNITY_EDITOR
+    Undo.RecordObject(node, "Toggle Junction Keep Clear");
+#endif
+
+        node.ToggleKeepIntersectionClear();
+        network.RefreshAll();
+
+#if UNITY_EDITOR
+    EditorUtility.SetDirty(node);
+    EditorUtility.SetDirty(network);
+    EditorSceneManager.MarkSceneDirty(gameObject.scene);
+#endif
     }
 
     public void ToggleSelectedApproachMovement(RoadLaneConnectionV2.MovementType movementType)

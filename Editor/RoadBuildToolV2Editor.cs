@@ -71,6 +71,13 @@ public class RoadBuildToolV2Editor : Editor
             SceneView.RepaintAll();
         }
 
+        if (GUILayout.Button("KeepClear"))
+        {
+            Tool.SetToolMode(RoadBuildToolV2.ToolMode.JunctionKeepClear);
+            EditorUtility.SetDirty(Tool);
+            SceneView.RepaintAll();
+        }
+
         if (GUILayout.Button("Манёвры"))
         {
             Tool.SetToolMode(RoadBuildToolV2.ToolMode.JunctionTurns);
@@ -211,7 +218,8 @@ public class RoadBuildToolV2Editor : Editor
                 return "Режим манёвров: ЛКМ по перекрестку и ближе к нужному подъезду выбирает входящий сегмент. В инспекторе включаются и выключаются ← ↑ →.";
             case RoadBuildToolV2.ToolMode.LaneConnections:
                 return "Режим ручных связей полос: сначала ЛКМ по входящей полосе перед перекрестком, потом ЛКМ по выходящей полосе после перекрестка. Повторный клик по той же выходящей полосе снимает связь.";
-
+            case RoadBuildToolV2.ToolMode.JunctionKeepClear:
+                return "Режим keep-clear: ЛКМ по перекрестку включает или выключает вафельную разметку и правило 'не занимать перекресток'.";
             default:
                 return "-";
         }
@@ -296,6 +304,11 @@ public class RoadBuildToolV2Editor : Editor
                 Handles.DrawSolidDisc(worldPosition, Vector3.forward, 0.06f);
                 Handles.DrawWireDisc(worldPosition, Vector3.forward, Tool.LanePickDistance);
                  break;
+            case RoadBuildToolV2.ToolMode.JunctionKeepClear:
+                Handles.color = Tool.JunctionPreviewColor;
+                Handles.DrawSolidDisc(worldPosition, Vector3.forward, 0.06f);
+                Handles.DrawWireDisc(worldPosition, Vector3.forward, Tool.JunctionPickDistance);
+                break;
         }
     }
 

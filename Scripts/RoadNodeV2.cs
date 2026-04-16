@@ -24,6 +24,7 @@ public class RoadNodeV2 : MonoBehaviour
 
     [Header("Junction control")]
     [SerializeField] private JunctionControlMode controlMode = JunctionControlMode.RightHandRule;
+    [SerializeField] private bool keepIntersectionClear = false;
 
     [Header("Default junction rules")]
     [SerializeField] private bool allowStraight = true;
@@ -46,6 +47,7 @@ public class RoadNodeV2 : MonoBehaviour
     public bool AllowRight => allowRight;
 
     public JunctionControlMode ControlMode => controlMode;
+    public bool KeepIntersectionClear => keepIntersectionClear;
     public bool IsIntersection => connectedSegments.Count > 2;
     public bool UsesTrafficLight => IsIntersection && controlMode == JunctionControlMode.TrafficLight;
 
@@ -93,6 +95,12 @@ public class RoadNodeV2 : MonoBehaviour
             ? JunctionControlMode.TrafficLight
             : JunctionControlMode.RightHandRule;
 
+        EnsureVisual();
+    }
+
+    public void ToggleKeepIntersectionClear()
+    {
+        keepIntersectionClear = !keepIntersectionClear;
         EnsureVisual();
     }
 
@@ -288,6 +296,22 @@ public class RoadNodeV2 : MonoBehaviour
         spriteRenderer.sortingOrder = 30;
 
         transform.localScale = new Vector3(visualSize, visualSize, 1f);
+
+        RoadNodeKeepClearMarkingV2 marking = GetComponent<RoadNodeKeepClearMarkingV2>();
+
+        if (IsIntersection && keepIntersectionClear)
+        {
+            if (marking == null)
+                marking = gameObject.AddComponent<RoadNodeKeepClearMarkingV2>();
+
+            marking.enabled = true;
+            marking.SyncFromNode();
+        }
+        else if (marking != null)
+        {
+            marking.ClearVisuals();
+            marking.enabled = false;
+        }
     }
 
     private Color GetNodeColor()
