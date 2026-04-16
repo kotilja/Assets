@@ -29,6 +29,10 @@ public class RoadVehicleAgentV2 : MonoBehaviour
     [SerializeField] private float exitClearDistance = 0.8f;
     [SerializeField] private float deadlockResolveDelay = 1.25f;
 
+    [Header("Lane planning")]
+    [SerializeField] private bool planTurnsAhead = true;
+    [SerializeField] private int lanePlanningLookaheadSegments = 3;
+
     private static readonly List<RoadVehicleAgentV2> activeVehicles = new List<RoadVehicleAgentV2>();
 
     private readonly List<Vector3> waypoints = new List<Vector3>();
@@ -227,16 +231,21 @@ public class RoadVehicleAgentV2 : MonoBehaviour
 
             RoadLaneConnectionV2.MovementType movementType = GetMovementType(signedAngle);
 
-            RoadLaneDataV2 requiredTurnLane = GetRequiredTurnLane(activeLane, movementType);
+            RoadLaneDataV2 plannedLane = GetPlannedLaneForCurrentSegment(
+                activeLane,
+                lanePath,
+                i,
+                movementType
+            );
 
-            if (requiredTurnLane != null && requiredTurnLane != activeLane)
+            if (plannedLane != null && plannedLane != activeLane)
             {
-                List<Vector3> laneChangePoints = BuildMidSegmentLaneChange(activeLane, requiredTurnLane);
+                List<Vector3> laneChangePoints = BuildMidSegmentLaneChange(activeLane, plannedLane);
 
                 for (int j = 0; j < laneChangePoints.Count; j++)
                     AddPointIfFar(laneChangePoints[j]);
 
-                activeLane = requiredTurnLane;
+                activeLane = plannedLane;
             }
 
             RoadLaneConnectionV2 connection = FindConnection(activeLane, plannedNextLane);
@@ -261,9 +270,11 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         }
     }
 
-    private RoadLaneDataV2 GetRequiredTurnLane(
+    private RoadLaneDataV2 GetPlannedLaneForCurrentSegment(
     RoadLaneDataV2 currentLane,
-    RoadLaneConnectionV2.MovementType movementType)
+    List<RoadLaneDataV2> lanePath,
+    int currentPathIndex,
+    RoadLaneConnectionV2.MovementType immediateMovementType)
     {
         if (currentLane == null || currentLane.ownerSegment == null)
             return currentLane;
@@ -276,32 +287,112 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         if (sameDirectionLanes == null || sameDirectionLanes.Count <= 1)
             return currentLane;
 
-        RoadLaneDataV2 best = currentLane;
+        if (immediateMovementType == RoadLaneConnectionV2.MovementType.Left)
+            return GetLaneForTurnPreparation(currentLane, sameDirectionLanes, immediateMovementType, false);
+
+        if (immediateMovementType == RoadLaneConnectionV2.MovementType.Right)
+            return GetLaneForTurnPreparation(currentLane, sameDirectionLanes, immediateMovementType, false);
+
+        if (!planTurnsAhead)
+            return currentLane;
+
+        RoadLaneConnectionV2.MovementType futureMovement = FindUpcomingTurnMovement(
+            lanePath,
+            currentPathIndex,
+            lanePlanningLookaheadSegments
+        );
+
+        if (futureMovement == RoadLaneConnectionV2.MovementType.Left ||
+            futureMovement == RoadLaneConnectionV2.MovementType.Right)
+        {
+            return GetLaneForTurnPreparation(currentLane, sameDirectionLanes, futureMovement, true);
+        }
+
+        return currentLane;
+    }
+
+    private RoadLaneConnectionV2.MovementType FindUpcomingTurnMovement(
+        List<RoadLaneDataV2> lanePath,
+        int currentPathIndex,
+        int maxSegmentsAhead)
+    {
+        if (lanePath == null || lanePath.Count < 2)
+            return RoadLaneConnectionV2.MovementType.Straight;
+
+        int checkedSegments = 0;
+
+        for (int i = currentPathIndex + 1; i < lanePath.Count - 1; i++)
+        {
+            if (checkedSegments >= Mathf.Max(1, maxSegmentsAhead))
+                break;
+
+            RoadLaneDataV2 fromLane = lanePath[i];
+            RoadLaneDataV2 toLane = lanePath[i + 1];
+
+            if (fromLane == null || toLane == null)
+                continue;
+
+            float signedAngle = Vector3.SignedAngle(
+                fromLane.DirectionVector.normalized,
+                toLane.DirectionVector.normalized,
+                Vector3.forward
+            );
+
+            RoadLaneConnectionV2.MovementType movementType = GetMovementType(signedAngle);
+
+            if (movementType == RoadLaneConnectionV2.MovementType.Left ||
+                movementType == RoadLaneConnectionV2.MovementType.Right)
+            {
+                return movementType;
+            }
+
+            checkedSegments++;
+        }
+
+        return RoadLaneConnectionV2.MovementType.Straight;
+    }
+
+    private RoadLaneDataV2 GetLaneForTurnPreparation(
+        RoadLaneDataV2 currentLane,
+        List<RoadLaneDataV2> sameDirectionLanes,
+        RoadLaneConnectionV2.MovementType movementType,
+        bool gradualShift)
+    {
+        if (currentLane == null || sameDirectionLanes == null || sameDirectionLanes.Count == 0)
+            return currentLane;
+
+        int currentIndex = currentLane.localLaneIndex;
+        int minIndex = 0;
+        int maxIndex = sameDirectionLanes.Count - 1;
+
+        int targetIndex = currentIndex;
 
         switch (movementType)
         {
             case RoadLaneConnectionV2.MovementType.Left:
-                for (int i = 0; i < sameDirectionLanes.Count; i++)
-                {
-                    RoadLaneDataV2 lane = sameDirectionLanes[i];
-                    if (lane != null && lane.localLaneIndex > best.localLaneIndex)
-                        best = lane;
-                }
-                return best;
+                targetIndex = gradualShift
+                    ? Mathf.Min(currentIndex + 1, maxIndex)
+                    : maxIndex;
+                break;
 
             case RoadLaneConnectionV2.MovementType.Right:
-                for (int i = 0; i < sameDirectionLanes.Count; i++)
-                {
-                    RoadLaneDataV2 lane = sameDirectionLanes[i];
-                    if (lane != null && lane.localLaneIndex < best.localLaneIndex)
-                        best = lane;
-                }
-                return best;
+                targetIndex = gradualShift
+                    ? Mathf.Max(currentIndex - 1, minIndex)
+                    : minIndex;
+                break;
 
-            case RoadLaneConnectionV2.MovementType.Straight:
             default:
                 return currentLane;
         }
+
+        for (int i = 0; i < sameDirectionLanes.Count; i++)
+        {
+            RoadLaneDataV2 lane = sameDirectionLanes[i];
+            if (lane != null && lane.localLaneIndex == targetIndex)
+                return lane;
+        }
+
+        return currentLane;
     }
 
     private List<Vector3> BuildMidSegmentLaneChange(RoadLaneDataV2 fromLane, RoadLaneDataV2 toLane)
