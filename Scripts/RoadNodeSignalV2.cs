@@ -348,7 +348,7 @@ public class RoadNodeSignalV2 : MonoBehaviour
                 {
                     incomingSegment = vertical[i],
                     allowStraight = true,
-                    allowLeft = false,
+                    allowLeft = true,
                     allowRight = true
                 });
             }
@@ -371,7 +371,7 @@ public class RoadNodeSignalV2 : MonoBehaviour
                 {
                     incomingSegment = horizontal[i],
                     allowStraight = true,
-                    allowLeft = false,
+                    allowLeft = true,
                     allowRight = true
                 });
             }
@@ -394,7 +394,7 @@ public class RoadNodeSignalV2 : MonoBehaviour
                 {
                     incomingSegment = incomingSegments[i],
                     allowStraight = true,
-                    allowLeft = false,
+                    allowLeft = true,
                     allowRight = true
                 });
             }
