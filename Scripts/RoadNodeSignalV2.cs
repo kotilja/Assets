@@ -475,6 +475,7 @@ public class RoadNodeSignalV2 : MonoBehaviour
     }
 
 
+
     private Vector3 GetIncomingStopCenter(RoadSegmentV2 segment)
     {
         if (segment == null || node == null)
