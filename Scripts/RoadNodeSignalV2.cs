@@ -31,6 +31,41 @@ public class RoadNodeSignalV2 : MonoBehaviour
         public SpriteRenderer lampRenderer;
     }
 
+    [System.Serializable]
+    public class SignalPhaseRule
+    {
+        public RoadSegmentV2 incomingSegment;
+        public bool allowStraight = true;
+        public bool allowLeft = false;
+        public bool allowRight = true;
+
+        public bool Allows(RoadLaneConnectionV2.MovementType movementType)
+        {
+            switch (movementType)
+            {
+                case RoadLaneConnectionV2.MovementType.Straight:
+                    return allowStraight;
+
+                case RoadLaneConnectionV2.MovementType.Left:
+                    return allowLeft;
+
+                case RoadLaneConnectionV2.MovementType.Right:
+                    return allowRight;
+
+                default:
+                    return false;
+            }
+        }
+    }
+
+    [System.Serializable]
+    public class SignalPhase
+    {
+        public string name = "Phase";
+        public float duration = 6f;
+        public List<SignalPhaseRule> rules = new List<SignalPhaseRule>();
+    }
+
     [Header("Incoming segments by phase")]
     [SerializeField] private List<RoadSegmentV2> phase1IncomingSegments = new List<RoadSegmentV2>();
     [SerializeField] private List<RoadSegmentV2> phase2IncomingSegments = new List<RoadSegmentV2>();
@@ -62,6 +97,13 @@ public class RoadNodeSignalV2 : MonoBehaviour
     [SerializeField] private Color greenColor = new Color(0.2f, 1f, 0.25f, 1f);
     [SerializeField] private Color offColor = new Color(0.18f, 0.18f, 0.18f, 1f);
 
+    [Header("Signal phases")]
+    [SerializeField] private bool useCustomPhases = true;
+    [SerializeField] private bool autoCycle = true;
+    [SerializeField] private List<SignalPhase> phases = new List<SignalPhase>();
+    [SerializeField] private int currentPhaseIndex = 0;
+    [SerializeField] private float phaseTimer = 0f;
+
     private RoadNodeV2 node;
     private CycleState currentState = CycleState.Phase1Green;
     private float stateTimer = 0f;
@@ -73,6 +115,10 @@ public class RoadNodeSignalV2 : MonoBehaviour
     private bool delayedSyncQueued;
 #endif
 
+    public bool UseCustomPhases => useCustomPhases;
+    public IReadOnlyList<SignalPhase> Phases => phases;
+    public int CurrentPhaseIndex => currentPhaseIndex;
+
     private static Sprite cachedSprite;
 
     private void OnEnable()
@@ -83,6 +129,7 @@ public class RoadNodeSignalV2 : MonoBehaviour
     private void Awake()
     {
         SyncFromNode();
+        EnsureDefaultPhases();
     }
 
     private void Start()
@@ -92,6 +139,7 @@ public class RoadNodeSignalV2 : MonoBehaviour
 
     private void OnValidate()
     {
+        EnsureDefaultPhases();
 #if UNITY_EDITOR
         if (Application.isPlaying)
         {
@@ -150,35 +198,226 @@ public class RoadNodeSignalV2 : MonoBehaviour
             return;
         }
 
-        if (Application.isPlaying)
+        if (!Application.isPlaying)
+            return;
+
+        if (!autoCycle || !useCustomPhases)
+            return;
+
+        if (phases == null || phases.Count == 0)
+            return;
+
+        SignalPhase phase = GetCurrentPhase();
+        if (phase == null)
+            return;
+
+        phaseTimer += Time.deltaTime;
+
+        float duration = Mathf.Max(0.2f, phase.duration);
+        if (phaseTimer >= duration)
+            AdvancePhase();
+
+        RefreshSignalVisuals();
+    }
+
+    public void AdvancePhase()
+    {
+        if (phases == null || phases.Count == 0)
+            return;
+
+        currentPhaseIndex = (currentPhaseIndex + 1) % phases.Count;
+        phaseTimer = 0f;
+        RefreshSignalVisuals();
+    }
+
+    public void SetPhase(int phaseIndex)
+    {
+        if (phases == null || phases.Count == 0)
+            return;
+
+        currentPhaseIndex = Mathf.Clamp(phaseIndex, 0, phases.Count - 1);
+        phaseTimer = 0f;
+        RefreshSignalVisuals();
+    }
+
+    private void EnsureDefaultPhases()
+    {
+        if (!useCustomPhases)
+            return;
+
+        if (node == null)
+            node = GetComponent<RoadNodeV2>();
+
+        if (node == null || !node.IsIntersection)
+            return;
+
+        bool needsRebuild = phases == null || phases.Count == 0;
+
+        if (!needsRebuild)
         {
-            stateTimer += Time.deltaTime;
-
-            switch (currentState)
+            for (int i = 0; i < phases.Count; i++)
             {
-                case CycleState.Phase1Green:
-                    if (stateTimer >= phase1GreenDuration)
-                        SwitchState(CycleState.Phase1Yellow);
+                if (phases[i] == null || phases[i].rules == null || phases[i].rules.Count == 0)
+                {
+                    needsRebuild = true;
                     break;
-
-                case CycleState.Phase1Yellow:
-                    if (stateTimer >= phase1YellowDuration)
-                        SwitchState(CycleState.Phase2Green);
-                    break;
-
-                case CycleState.Phase2Green:
-                    if (stateTimer >= phase2GreenDuration)
-                        SwitchState(CycleState.Phase2Yellow);
-                    break;
-
-                case CycleState.Phase2Yellow:
-                    if (stateTimer >= phase2YellowDuration)
-                        SwitchState(CycleState.Phase1Green);
-                    break;
+                }
             }
         }
 
-        RefreshSignalVisuals();
+        if (!needsRebuild)
+            return;
+
+        phases = BuildDefaultPhases();
+        currentPhaseIndex = Mathf.Clamp(currentPhaseIndex, 0, Mathf.Max(0, phases.Count - 1));
+        phaseTimer = 0f;
+    }
+
+    private List<SignalPhase> BuildDefaultPhases()
+    {
+        List<SignalPhase> result = new List<SignalPhase>();
+
+        if (node == null)
+            return result;
+
+        List<RoadSegmentV2> incomingSegments = GetIncomingSegments();
+        if (incomingSegments.Count == 0)
+            return result;
+
+        List<RoadSegmentV2> horizontal = new List<RoadSegmentV2>();
+        List<RoadSegmentV2> vertical = new List<RoadSegmentV2>();
+
+        for (int i = 0; i < incomingSegments.Count; i++)
+        {
+            RoadSegmentV2 segment = incomingSegments[i];
+            if (segment == null)
+                continue;
+
+            Vector3 dir = GetIncomingDirection(segment).normalized;
+
+            if (Mathf.Abs(dir.x) >= Mathf.Abs(dir.y))
+                horizontal.Add(segment);
+            else
+                vertical.Add(segment);
+        }
+
+        if (vertical.Count > 0)
+        {
+            SignalPhase phase = new SignalPhase
+            {
+                name = "NorthSouth",
+                duration = 6f,
+                rules = new List<SignalPhaseRule>()
+            };
+
+            for (int i = 0; i < vertical.Count; i++)
+            {
+                phase.rules.Add(new SignalPhaseRule
+                {
+                    incomingSegment = vertical[i],
+                    allowStraight = true,
+                    allowLeft = false,
+                    allowRight = true
+                });
+            }
+
+            result.Add(phase);
+        }
+
+        if (horizontal.Count > 0)
+        {
+            SignalPhase phase = new SignalPhase
+            {
+                name = "EastWest",
+                duration = 6f,
+                rules = new List<SignalPhaseRule>()
+            };
+
+            for (int i = 0; i < horizontal.Count; i++)
+            {
+                phase.rules.Add(new SignalPhaseRule
+                {
+                    incomingSegment = horizontal[i],
+                    allowStraight = true,
+                    allowLeft = false,
+                    allowRight = true
+                });
+            }
+
+            result.Add(phase);
+        }
+
+        if (result.Count == 0)
+        {
+            SignalPhase fallback = new SignalPhase
+            {
+                name = "AllStopLikeFallback",
+                duration = 6f,
+                rules = new List<SignalPhaseRule>()
+            };
+
+            for (int i = 0; i < incomingSegments.Count; i++)
+            {
+                fallback.rules.Add(new SignalPhaseRule
+                {
+                    incomingSegment = incomingSegments[i],
+                    allowStraight = true,
+                    allowLeft = false,
+                    allowRight = true
+                });
+            }
+
+            result.Add(fallback);
+        }
+
+        return result;
+    }
+
+    private List<RoadSegmentV2> GetIncomingSegments()
+    {
+        List<RoadSegmentV2> result = new List<RoadSegmentV2>();
+
+        if (node == null)
+            return result;
+
+        for (int i = 0; i < node.ConnectedSegments.Count; i++)
+        {
+            RoadSegmentV2 segment = node.ConnectedSegments[i];
+            if (segment == null)
+                continue;
+
+            bool incoming =
+                (segment.EndNode == node && segment.ForwardLanes > 0) ||
+                (segment.StartNode == node && segment.BackwardLanes > 0);
+
+            if (incoming)
+                result.Add(segment);
+        }
+
+        return result;
+    }
+
+    private Vector3 GetIncomingDirection(RoadSegmentV2 segment)
+    {
+        if (segment == null || node == null)
+            return Vector3.right;
+
+        if (segment.EndNode == node && segment.StartNode != null)
+            return (node.transform.position - segment.StartNode.transform.position).normalized;
+
+        if (segment.StartNode == node && segment.EndNode != null)
+            return (node.transform.position - segment.EndNode.transform.position).normalized;
+
+        return Vector3.right;
+    }
+
+    private SignalPhase GetCurrentPhase()
+    {
+        if (phases == null || phases.Count == 0)
+            return null;
+
+        currentPhaseIndex = Mathf.Clamp(currentPhaseIndex, 0, phases.Count - 1);
+        return phases[currentPhaseIndex];
     }
 
     public void SyncFromNode()
@@ -545,37 +784,21 @@ public class RoadNodeSignalV2 : MonoBehaviour
 
     public bool CanUseMovement(RoadSegmentV2 incomingSegment, RoadLaneConnectionV2.MovementType movementType)
     {
-        if (incomingSegment == null)
-            return false;
+        if (!useCustomPhases)
+            return CanUseMovementFallback(incomingSegment, movementType);
 
-        if (node == null)
-            node = GetComponent<RoadNodeV2>();
+        SignalPhase phase = GetCurrentPhase();
+        if (phase == null || phase.rules == null || phase.rules.Count == 0)
+            return CanUseMovementFallback(incomingSegment, movementType);
 
-        if (node == null || !node.UsesTrafficLight)
-            return true;
-
-        if (!MovementTypeAllowed(movementType))
-            return false;
-
-        bool inPhase1 = phase1IncomingSegments.Contains(incomingSegment);
-        bool inPhase2 = phase2IncomingSegments.Contains(incomingSegment);
-
-        if (!inPhase1 && !inPhase2)
-            return false;
-
-        switch (currentState)
+        for (int i = 0; i < phase.rules.Count; i++)
         {
-            case CycleState.Phase1Green:
-                return inPhase1;
+            SignalPhaseRule rule = phase.rules[i];
+            if (rule == null || rule.incomingSegment == null)
+                continue;
 
-            case CycleState.Phase1Yellow:
-                return false;
-
-            case CycleState.Phase2Green:
-                return inPhase2;
-
-            case CycleState.Phase2Yellow:
-                return false;
+            if (rule.incomingSegment == incomingSegment)
+                return rule.Allows(movementType);
         }
 
         return false;
