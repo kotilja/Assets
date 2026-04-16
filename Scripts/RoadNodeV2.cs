@@ -25,6 +25,7 @@ public class RoadNodeV2 : MonoBehaviour
     [Header("Junction control")]
     [SerializeField] private JunctionControlMode controlMode = JunctionControlMode.RightHandRule;
     [SerializeField] private bool keepIntersectionClear = false;
+    public bool KeepIntersectionClear => keepIntersectionClear;
 
     [Header("Default junction rules")]
     [SerializeField] private bool allowStraight = true;

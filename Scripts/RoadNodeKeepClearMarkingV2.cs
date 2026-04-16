@@ -5,11 +5,14 @@ using UnityEngine;
 public class RoadNodeKeepClearMarkingV2 : MonoBehaviour
 {
     [SerializeField] private RoadNodeV2 node;
+
+    [Header("Visual")]
     [SerializeField] private Color markingColor = new Color(1f, 0.92f, 0.1f, 0.95f);
-    [SerializeField] private float lineWidth = 0.06f;
-    [SerializeField] private float boxInset = 0.06f;
-    [SerializeField] private float diagonalSpacing = 0.28f;
-    [SerializeField] private int sortingOrder = 19;
+    [SerializeField] private float lineWidth = 0.09f;
+    [SerializeField] private float boxInset = 0.08f;
+    [SerializeField] private float diagonalSpacing = 0.30f;
+    [SerializeField] private int sortingOrder = 60;
+    [SerializeField] private float zOffset = -0.02f;
 
     private readonly List<LineRenderer> lineRenderers = new List<LineRenderer>();
     private Transform linesRoot;
@@ -61,6 +64,9 @@ public class RoadNodeKeepClearMarkingV2 : MonoBehaviour
         if (node == null)
             node = GetComponent<RoadNodeV2>();
 
+        EnsureRoot();
+        CompensateParentScale();
+
         if (node == null || !node.IsIntersection || !node.KeepIntersectionClear)
         {
             ClearVisuals();
@@ -82,25 +88,23 @@ public class RoadNodeKeepClearMarkingV2 : MonoBehaviour
 
         List<(Vector3 a, Vector3 b)> segments = new List<(Vector3 a, Vector3 b)>();
 
-        Vector3 bl = new Vector3(xMin, yMin, 0f);
-        Vector3 br = new Vector3(xMax, yMin, 0f);
-        Vector3 tr = new Vector3(xMax, yMax, 0f);
-        Vector3 tl = new Vector3(xMin, yMax, 0f);
+        Vector3 bl = new Vector3(xMin, yMin, zOffset);
+        Vector3 br = new Vector3(xMax, yMin, zOffset);
+        Vector3 tr = new Vector3(xMax, yMax, zOffset);
+        Vector3 tl = new Vector3(xMin, yMax, zOffset);
 
         segments.Add((bl, br));
         segments.Add((br, tr));
         segments.Add((tr, tl));
         segments.Add((tl, bl));
 
-        BuildDiagonalSegmentsPositive(xMin, xMax, yMin, yMax, diagonalSpacing, segments);
-        BuildDiagonalSegmentsNegative(xMin, xMax, yMin, yMax, diagonalSpacing, segments);
+        BuildDiagonalSegmentsPositive(xMin, xMax, yMin, yMax, diagonalSpacing, zOffset, segments);
+        BuildDiagonalSegmentsNegative(xMin, xMax, yMin, yMax, diagonalSpacing, zOffset, segments);
 
         EnsureLineCount(segments.Count);
 
         for (int i = 0; i < segments.Count; i++)
-        {
             ApplyLine(lineRenderers[i], segments[i].a, segments[i].b);
-        }
 
         for (int i = segments.Count; i < lineRenderers.Count; i++)
         {
@@ -115,6 +119,7 @@ public class RoadNodeKeepClearMarkingV2 : MonoBehaviour
         float yMin,
         float yMax,
         float spacing,
+        float z,
         List<(Vector3 a, Vector3 b)> segments)
     {
         float cMin = yMin - xMax;
@@ -122,7 +127,7 @@ public class RoadNodeKeepClearMarkingV2 : MonoBehaviour
 
         for (float c = cMin; c <= cMax; c += Mathf.Max(0.08f, spacing))
         {
-            if (TryGetPositiveSlopeSegment(xMin, xMax, yMin, yMax, c, out Vector3 a, out Vector3 b))
+            if (TryGetPositiveSlopeSegment(xMin, xMax, yMin, yMax, c, z, out Vector3 a, out Vector3 b))
                 segments.Add((a, b));
         }
     }
@@ -133,6 +138,7 @@ public class RoadNodeKeepClearMarkingV2 : MonoBehaviour
         float yMin,
         float yMax,
         float spacing,
+        float z,
         List<(Vector3 a, Vector3 b)> segments)
     {
         float cMin = yMin + xMin;
@@ -140,7 +146,7 @@ public class RoadNodeKeepClearMarkingV2 : MonoBehaviour
 
         for (float c = cMin; c <= cMax; c += Mathf.Max(0.08f, spacing))
         {
-            if (TryGetNegativeSlopeSegment(xMin, xMax, yMin, yMax, c, out Vector3 a, out Vector3 b))
+            if (TryGetNegativeSlopeSegment(xMin, xMax, yMin, yMax, c, z, out Vector3 a, out Vector3 b))
                 segments.Add((a, b));
         }
     }
@@ -151,15 +157,16 @@ public class RoadNodeKeepClearMarkingV2 : MonoBehaviour
         float yMin,
         float yMax,
         float c,
+        float z,
         out Vector3 a,
         out Vector3 b)
     {
         List<Vector3> points = new List<Vector3>();
 
-        TryAddUnique(points, new Vector3(xMin, xMin + c, 0f), xMin, xMax, yMin, yMax);
-        TryAddUnique(points, new Vector3(xMax, xMax + c, 0f), xMin, xMax, yMin, yMax);
-        TryAddUnique(points, new Vector3(yMin - c, yMin, 0f), xMin, xMax, yMin, yMax);
-        TryAddUnique(points, new Vector3(yMax - c, yMax, 0f), xMin, xMax, yMin, yMax);
+        TryAddUnique(points, new Vector3(xMin, xMin + c, z), xMin, xMax, yMin, yMax);
+        TryAddUnique(points, new Vector3(xMax, xMax + c, z), xMin, xMax, yMin, yMax);
+        TryAddUnique(points, new Vector3(yMin - c, yMin, z), xMin, xMax, yMin, yMax);
+        TryAddUnique(points, new Vector3(yMax - c, yMax, z), xMin, xMax, yMin, yMax);
 
         return ExtractSegment(points, out a, out b);
     }
@@ -170,15 +177,16 @@ public class RoadNodeKeepClearMarkingV2 : MonoBehaviour
         float yMin,
         float yMax,
         float c,
+        float z,
         out Vector3 a,
         out Vector3 b)
     {
         List<Vector3> points = new List<Vector3>();
 
-        TryAddUnique(points, new Vector3(xMin, -xMin + c, 0f), xMin, xMax, yMin, yMax);
-        TryAddUnique(points, new Vector3(xMax, -xMax + c, 0f), xMin, xMax, yMin, yMax);
-        TryAddUnique(points, new Vector3(c - yMin, yMin, 0f), xMin, xMax, yMin, yMax);
-        TryAddUnique(points, new Vector3(c - yMax, yMax, 0f), xMin, xMax, yMin, yMax);
+        TryAddUnique(points, new Vector3(xMin, -xMin + c, z), xMin, xMax, yMin, yMax);
+        TryAddUnique(points, new Vector3(xMax, -xMax + c, z), xMin, xMax, yMin, yMax);
+        TryAddUnique(points, new Vector3(c - yMin, yMin, z), xMin, xMax, yMin, yMax);
+        TryAddUnique(points, new Vector3(c - yMax, yMax, z), xMin, xMax, yMin, yMax);
 
         return ExtractSegment(points, out a, out b);
     }
@@ -258,29 +266,44 @@ public class RoadNodeKeepClearMarkingV2 : MonoBehaviour
 
     private void EnsureRoot()
     {
-        if (linesRoot != null)
+        if (linesRoot == null)
+        {
+            Transform existing = transform.Find("KeepClearMarking");
+            if (existing != null)
+            {
+                linesRoot = existing;
+            }
+            else
+            {
+                GameObject root = new GameObject("KeepClearMarking");
+                root.transform.SetParent(transform, false);
+                root.transform.localPosition = Vector3.zero;
+                root.transform.localRotation = Quaternion.identity;
+                root.transform.localScale = Vector3.one;
+                linesRoot = root.transform;
+            }
+        }
+
+        if (lineRenderers.Count == 0)
+        {
+            LineRenderer[] existingRenderers = linesRoot.GetComponentsInChildren<LineRenderer>(true);
+            for (int i = 0; i < existingRenderers.Length; i++)
+                lineRenderers.Add(existingRenderers[i]);
+        }
+    }
+
+    private void CompensateParentScale()
+    {
+        if (linesRoot == null)
             return;
 
-        Transform existing = transform.Find("KeepClearMarking");
-        if (existing != null)
-        {
-            linesRoot = existing;
-        }
-        else
-        {
-            GameObject root = new GameObject("KeepClearMarking");
-            root.transform.SetParent(transform);
-            root.transform.localPosition = Vector3.zero;
-            root.transform.localRotation = Quaternion.identity;
-            root.transform.localScale = Vector3.one;
-            linesRoot = root.transform;
-        }
+        Vector3 parentScale = transform.lossyScale;
 
-        lineRenderers.Clear();
+        float sx = Mathf.Abs(parentScale.x) > 0.0001f ? 1f / parentScale.x : 1f;
+        float sy = Mathf.Abs(parentScale.y) > 0.0001f ? 1f / parentScale.y : 1f;
+        float sz = Mathf.Abs(parentScale.z) > 0.0001f ? 1f / parentScale.z : 1f;
 
-        LineRenderer[] existingRenderers = linesRoot.GetComponentsInChildren<LineRenderer>(true);
-        for (int i = 0; i < existingRenderers.Length; i++)
-            lineRenderers.Add(existingRenderers[i]);
+        linesRoot.localScale = new Vector3(sx, sy, sz);
     }
 
     private void EnsureLineCount(int count)
@@ -290,7 +313,7 @@ public class RoadNodeKeepClearMarkingV2 : MonoBehaviour
         while (lineRenderers.Count < count)
         {
             GameObject child = new GameObject($"Line_{lineRenderers.Count}");
-            child.transform.SetParent(linesRoot);
+            child.transform.SetParent(linesRoot, false);
             child.transform.localPosition = Vector3.zero;
             child.transform.localRotation = Quaternion.identity;
             child.transform.localScale = Vector3.one;
@@ -337,5 +360,6 @@ public class RoadNodeKeepClearMarkingV2 : MonoBehaviour
         lr.alignment = LineAlignment.TransformZ;
         lr.numCapVertices = 2;
         lr.numCornerVertices = 2;
+        lr.sortingOrder = sortingOrder;
     }
 }
