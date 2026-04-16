@@ -939,24 +939,7 @@ public class RoadNodeSignalV2 : MonoBehaviour
         }
     }
 
-    private bool CanUseMovementFallback(RoadSegmentV2 incomingSegment, RoadLaneConnectionV2.MovementType movementType)
-    {
-        if (incomingSegment == null)
-            return false;
-
-        LampState lampState = GetLampStateForSegment(incomingSegment);
-
-        switch (lampState)
-        {
-            case LampState.Green:
-                return MovementTypeAllowed(movementType);
-
-            case LampState.Yellow:
-            case LampState.Red:
-            default:
-                return false;
-        }
-    }
+   
 
     private bool MovementTypeAllowed(RoadLaneConnectionV2.MovementType movementType)
     {
