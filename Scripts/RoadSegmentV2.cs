@@ -28,6 +28,15 @@ public class RoadSegmentV2 : MonoBehaviour
     [SerializeField] private float stopLineWidth = 0.12f;
     [SerializeField] private int stopLineSortingOrder = 20;
 
+    [Header("Sidewalks")]
+    [SerializeField] private bool generateSidewalks = true;
+    [SerializeField] private bool leftSidewalk = true;
+    [SerializeField] private bool rightSidewalk = true;
+    [SerializeField] private float sidewalkWidth = 0.32f;
+    [SerializeField] private float sidewalkOffset = 0.10f;
+    [SerializeField] private Color sidewalkColor = new Color(0.55f, 0.55f, 0.55f, 1f);
+    [SerializeField] private int sidewalkSortingOrder = 4;
+
     [Header("Lane markings")]
     [SerializeField] private Color laneMarkingColor = new Color(0.85f, 0.92f, 1f, 0.95f);
     [SerializeField] private Color centerSeparatorColor = new Color(1f, 0.92f, 0.2f, 0.95f);
@@ -54,6 +63,8 @@ public class RoadSegmentV2 : MonoBehaviour
     [SerializeField] private float laneChangeLength = 0.9f;
 
     private LineRenderer roadRenderer;
+    private LineRenderer leftSidewalkRenderer;
+    private LineRenderer rightSidewalkRenderer;
     private Material cachedMaterial;
     private LineRenderer forwardStopLineRenderer;
     private LineRenderer backwardStopLineRenderer;
@@ -87,6 +98,11 @@ public class RoadSegmentV2 : MonoBehaviour
 
     public bool IsCurved => isCurved;
     public Vector3 CurveControlPoint => curveControlPoint;
+    public bool GenerateSidewalks => generateSidewalks;
+    public bool HasLeftSidewalk => generateSidewalks && leftSidewalk;
+    public bool HasRightSidewalk => generateSidewalks && rightSidewalk;
+    public float SidewalkWidth => sidewalkWidth;
+    public float SidewalkOffset => sidewalkOffset;
 
     public void Initialize(
         int newId,
@@ -200,6 +216,7 @@ private void OnDestroy()
         for (int i = 0; i < centerPolyline.Count; i++)
             roadRenderer.SetPosition(i, centerPolyline[i]);
 
+        RefreshSidewalkVisuals(centerPolyline);
         RebuildLaneVisualsAndData(centerPolyline);
     }
 
@@ -684,6 +701,26 @@ private void OnDestroy()
         return BuildCenterPolyline();
     }
 
+    public List<Vector3> GetLeftSidewalkPolylineWorld()
+    {
+        if (!HasLeftSidewalk)
+            return new List<Vector3>();
+
+        List<Vector3> centerPolyline = BuildCenterPolyline();
+        float offset = TotalRoadWidth * 0.5f + sidewalkOffset + sidewalkWidth * 0.5f;
+        return BuildOffsetPolyline(centerPolyline, offset);
+    }
+
+    public List<Vector3> GetRightSidewalkPolylineWorld()
+    {
+        if (!HasRightSidewalk)
+            return new List<Vector3>();
+
+        List<Vector3> centerPolyline = BuildCenterPolyline();
+        float offset = -(TotalRoadWidth * 0.5f + sidewalkOffset + sidewalkWidth * 0.5f);
+        return BuildOffsetPolyline(centerPolyline, offset);
+    }
+
     private List<Vector3> BuildCenterPolyline()
     {
         List<Vector3> points = new List<Vector3>();
@@ -856,6 +893,126 @@ private void OnDestroy()
 
         if (laneData.Count > targetCount)
             laneData.RemoveRange(targetCount, laneData.Count - targetCount);
+    }
+
+    private void RefreshSidewalkVisuals(List<Vector3> centerPolyline)
+    {
+        EnsureSidewalkRenderers();
+
+        if (!generateSidewalks || centerPolyline == null || centerPolyline.Count < 2)
+        {
+            if (leftSidewalkRenderer != null)
+                leftSidewalkRenderer.enabled = false;
+
+            if (rightSidewalkRenderer != null)
+                rightSidewalkRenderer.enabled = false;
+
+            return;
+        }
+
+        if (leftSidewalk)
+        {
+            float offset = TotalRoadWidth * 0.5f + sidewalkOffset + sidewalkWidth * 0.5f;
+            List<Vector3> leftPolyline = BuildOffsetPolyline(centerPolyline, offset);
+            ApplySidewalkPolyline(leftSidewalkRenderer, leftPolyline, "Sidewalk_Left");
+        }
+        else if (leftSidewalkRenderer != null)
+        {
+            leftSidewalkRenderer.enabled = false;
+        }
+
+        if (rightSidewalk)
+        {
+            float offset = -(TotalRoadWidth * 0.5f + sidewalkOffset + sidewalkWidth * 0.5f);
+            List<Vector3> rightPolyline = BuildOffsetPolyline(centerPolyline, offset);
+            ApplySidewalkPolyline(rightSidewalkRenderer, rightPolyline, "Sidewalk_Right");
+        }
+        else if (rightSidewalkRenderer != null)
+        {
+            rightSidewalkRenderer.enabled = false;
+        }
+    }
+
+    private void ApplySidewalkPolyline(LineRenderer renderer, List<Vector3> polyline, string objectName)
+    {
+        if (renderer == null)
+            return;
+
+        if (polyline == null || polyline.Count < 2)
+        {
+            renderer.enabled = false;
+            return;
+        }
+
+        renderer.gameObject.name = objectName;
+        renderer.enabled = true;
+        renderer.positionCount = polyline.Count;
+        renderer.startWidth = sidewalkWidth;
+        renderer.endWidth = sidewalkWidth;
+        renderer.startColor = sidewalkColor;
+        renderer.endColor = sidewalkColor;
+        renderer.sortingOrder = sidewalkSortingOrder;
+
+        for (int i = 0; i < polyline.Count; i++)
+            renderer.SetPosition(i, polyline[i]);
+    }
+
+    private void EnsureSidewalkRenderers()
+    {
+        if (leftSidewalkRenderer == null)
+        {
+            Transform existing = transform.Find("Sidewalk_Left");
+            if (existing != null)
+                leftSidewalkRenderer = existing.GetComponent<LineRenderer>();
+
+            if (leftSidewalkRenderer == null)
+            {
+                GameObject go = new GameObject("Sidewalk_Left");
+                go.transform.SetParent(transform);
+                go.transform.localPosition = Vector3.zero;
+                go.transform.localRotation = Quaternion.identity;
+                leftSidewalkRenderer = go.AddComponent<LineRenderer>();
+            }
+        }
+
+        if (rightSidewalkRenderer == null)
+        {
+            Transform existing = transform.Find("Sidewalk_Right");
+            if (existing != null)
+                rightSidewalkRenderer = existing.GetComponent<LineRenderer>();
+
+            if (rightSidewalkRenderer == null)
+            {
+                GameObject go = new GameObject("Sidewalk_Right");
+                go.transform.SetParent(transform);
+                go.transform.localPosition = Vector3.zero;
+                go.transform.localRotation = Quaternion.identity;
+                rightSidewalkRenderer = go.AddComponent<LineRenderer>();
+            }
+        }
+
+        ConfigureSidewalkRenderer(leftSidewalkRenderer);
+        ConfigureSidewalkRenderer(rightSidewalkRenderer);
+    }
+
+    private void ConfigureSidewalkRenderer(LineRenderer renderer)
+    {
+        if (renderer == null)
+            return;
+
+        if (cachedMaterial == null)
+        {
+            Shader shader = Shader.Find("Sprites/Default");
+            cachedMaterial = new Material(shader);
+            cachedMaterial.hideFlags = HideFlags.HideAndDontSave;
+        }
+
+        renderer.sharedMaterial = cachedMaterial;
+        renderer.useWorldSpace = true;
+        renderer.numCapVertices = 0;
+        renderer.numCornerVertices = 2;
+        renderer.textureMode = LineTextureMode.Stretch;
+        renderer.alignment = LineAlignment.TransformZ;
     }
 
     private void UpdateArrowVisual(
