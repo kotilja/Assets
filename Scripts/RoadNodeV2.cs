@@ -48,7 +48,7 @@ public class RoadNodeV2 : MonoBehaviour
     public bool AllowRight => allowRight;
 
     public JunctionControlMode ControlMode => controlMode;
-        public bool IsIntersection => connectedSegments.Count > 2;
+    public bool IsIntersection => connectedSegments.Count > 2;
     public bool UsesTrafficLight => IsIntersection && controlMode == JunctionControlMode.TrafficLight;
 
     public void Initialize(int newId)
