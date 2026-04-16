@@ -941,10 +941,11 @@ private void AddManualConnection(RoadNodeV2 node, RoadLaneDataV2 fromLane, RoadL
             if (segment == null || segment.StartNode == null || segment.EndNode == null)
                 continue;
 
-            Vector3 a = segment.StartNode.transform.position;
-            Vector3 b = segment.EndNode.transform.position;
+            List<Vector3> polyline = segment.GetCenterPolylineWorld();
+            if (polyline == null || polyline.Count < 2)
+                continue;
 
-            Vector3 candidate = ProjectPointOntoSegment(position, a, b);
+            Vector3 candidate = ProjectPointOntoPolyline(position, polyline);
             float distance = Vector3.Distance(position, candidate);
 
             if (distance <= bestDistance)
@@ -996,12 +997,12 @@ private void AddManualConnection(RoadNodeV2 node, RoadLaneDataV2 fromLane, RoadL
     }
 
     public RoadSegmentV2 CreateSegment(
-        RoadNodeV2 startNode,
-        RoadNodeV2 endNode,
-        int forwardLanes,
-        int backwardLanes,
-        float laneWidth,
-        float speedLimit)
+    RoadNodeV2 startNode,
+    RoadNodeV2 endNode,
+    int forwardLanes,
+    int backwardLanes,
+    float laneWidth,
+    float speedLimit)
     {
         if (startNode == null || endNode == null)
             return null;
@@ -1016,79 +1017,28 @@ private void AddManualConnection(RoadNodeV2 node, RoadLaneDataV2 fromLane, RoadL
         if (existingDirect != null)
             return existingDirect;
 
-        Vector3 a = startNode.transform.position;
-        Vector3 b = endNode.transform.position;
+        List<Vector3> newPolyline = new List<Vector3>
+    {
+        startNode.transform.position,
+        endNode.transform.position
+    };
 
-        List<RoadSegmentV2> snapshot = new List<RoadSegmentV2>(segments);
         List<ExistingSegmentIntersection> foundIntersections = new List<ExistingSegmentIntersection>();
         List<NewSegmentSplitPoint> splitPoints = new List<NewSegmentSplitPoint>
-        {
-            new NewSegmentSplitPoint { t = 0f, node = startNode },
-            new NewSegmentSplitPoint { t = 1f, node = endNode }
-        };
+    {
+        new NewSegmentSplitPoint { t = 0f, node = startNode },
+        new NewSegmentSplitPoint { t = 1f, node = endNode }
+    };
 
-        foreach (RoadSegmentV2 segment in snapshot)
-        {
-            if (segment == null || segment.StartNode == null || segment.EndNode == null)
-                continue;
+        CollectIntersectionsForNewPolyline(
+            newPolyline,
+            startNode,
+            endNode,
+            foundIntersections,
+            splitPoints
+        );
 
-            Vector3 c = segment.StartNode.transform.position;
-            Vector3 d = segment.EndNode.transform.position;
-
-            if (!TryGetSegmentIntersection(a, b, c, d, out Vector3 point, out float tNew, out float tExisting))
-                continue;
-
-            bool isSameStart = Vector3.Distance(point, a) <= intersectionSnapDistance;
-            bool isSameEnd = Vector3.Distance(point, b) <= intersectionSnapDistance;
-            bool isExistingStart = Vector3.Distance(point, c) <= intersectionSnapDistance;
-            bool isExistingEnd = Vector3.Distance(point, d) <= intersectionSnapDistance;
-
-            if ((isSameStart || isSameEnd) && (isExistingStart || isExistingEnd))
-                continue;
-
-            RoadNodeV2 intersectionNode = ResolveIntersectionNode(
-                segment,
-                point,
-                tExisting,
-                startNode,
-                endNode,
-                tNew
-            );
-
-            if (intersectionNode == null)
-                continue;
-
-            foundIntersections.Add(new ExistingSegmentIntersection
-            {
-                segment = segment,
-                node = intersectionNode,
-                existingT = tExisting,
-                newSegmentT = tNew
-            });
-
-            AddSplitPoint(splitPoints, tNew, intersectionNode);
-        }
-
-        HashSet<RoadSegmentV2> alreadySplit = new HashSet<RoadSegmentV2>();
-
-        foreach (ExistingSegmentIntersection intersection in foundIntersections)
-        {
-            if (intersection == null || intersection.segment == null || intersection.node == null)
-                continue;
-
-            if (alreadySplit.Contains(intersection.segment))
-                continue;
-
-            bool interiorExisting =
-                intersection.existingT > intersectionEpsilon &&
-                intersection.existingT < 1f - intersectionEpsilon;
-
-            if (!interiorExisting)
-                continue;
-
-            SplitExistingSegment(intersection.segment, intersection.node);
-            alreadySplit.Add(intersection.segment);
-        }
+        SplitIntersectedExistingSegments(foundIntersections);
 
         splitPoints.Sort((x, y) => x.t.CompareTo(y.t));
 
@@ -1119,44 +1069,8 @@ private void AddManualConnection(RoadNodeV2 node, RoadLaneDataV2 fromLane, RoadL
         return firstCreated;
     }
 
-    public RoadSegmentV2 CreateCurvedSegment(
-    RoadNodeV2 startNode,
-    RoadNodeV2 endNode,
-    Vector3 controlPoint,
-    int forwardLanes,
-    int backwardLanes,
-    float laneWidth,
-    float speedLimit)
-    {
-        if (startNode == null || endNode == null)
-            return null;
-
-        if (startNode == endNode)
-            return null;
-
-        EnsureRoots();
-        CleanupNulls();
-
-        RoadSegmentV2 existingDirect = FindExistingSegment(startNode, endNode);
-        if (existingDirect != null)
-            return existingDirect;
-
-        RoadSegmentV2 segment = CreateSegmentRaw(
-            startNode,
-            endNode,
-            forwardLanes,
-            backwardLanes,
-            laneWidth,
-            speedLimit
-        );
-
-        if (segment == null)
-            return null;
-
-        segment.SetCurve(controlPoint);
-        RefreshAll();
-        return segment;
-    }
+    if (first.IsCurved || second.IsCurved)
+    return false;
 
     private void AddSplitPoint(List<NewSegmentSplitPoint> splitPoints, float t, RoadNodeV2 node)
     {
@@ -1208,30 +1122,59 @@ private void AddManualConnection(RoadNodeV2 node, RoadLaneDataV2 fromLane, RoadL
         return GetOrCreateNodeNear(point, intersectionSnapDistance);
     }
 
-private void SplitExistingSegment(RoadSegmentV2 segment, RoadNodeV2 splitNode)
-{
-    if (segment == null || splitNode == null)
-        return;
+    private void SplitExistingSegment(RoadSegmentV2 segment, RoadNodeV2 splitNode, float splitT)
+    {
+        if (segment == null || splitNode == null)
+            return;
 
-    if (segment.StartNode == splitNode || segment.EndNode == splitNode)
-        return;
+        if (segment.StartNode == splitNode || segment.EndNode == splitNode)
+            return;
 
-    RoadNodeV2 oldStart = segment.StartNode;
-    RoadNodeV2 oldEnd = segment.EndNode;
+        RoadNodeV2 oldStart = segment.StartNode;
+        RoadNodeV2 oldEnd = segment.EndNode;
 
-    int oldForward = segment.ForwardLanes;
-    int oldBackward = segment.BackwardLanes;
-    float oldLaneWidth = segment.LaneWidth;
-    float oldSpeedLimit = segment.SpeedLimit;
+        int oldForward = segment.ForwardLanes;
+        int oldBackward = segment.BackwardLanes;
+        float oldLaneWidth = segment.LaneWidth;
+        float oldSpeedLimit = segment.SpeedLimit;
 
-    DeleteSegmentInternal(segment, deleteOrphanNodes: false);
+        if (!segment.IsCurved)
+        {
+            DeleteSegmentInternal(segment, deleteOrphanNodes: false);
 
-    CreateSegmentRaw(oldStart, splitNode, oldForward, oldBackward, oldLaneWidth, oldSpeedLimit);
-    CreateSegmentRaw(splitNode, oldEnd, oldForward, oldBackward, oldLaneWidth, oldSpeedLimit);
+            CreateSegmentRaw(oldStart, splitNode, oldForward, oldBackward, oldLaneWidth, oldSpeedLimit);
+            CreateSegmentRaw(splitNode, oldEnd, oldForward, oldBackward, oldLaneWidth, oldSpeedLimit);
 
-    DeleteNodeIfOrphaned(oldStart);
-    DeleteNodeIfOrphaned(oldEnd);
-}
+            DeleteNodeIfOrphaned(oldStart);
+            DeleteNodeIfOrphaned(oldEnd);
+            return;
+        }
+
+        Vector3 p0 = oldStart.transform.position;
+        Vector3 p1 = segment.CurveControlPoint;
+        Vector3 p2 = oldEnd.transform.position;
+
+        float t = Mathf.Clamp(splitT, intersectionEpsilon, 1f - intersectionEpsilon);
+
+        SplitQuadratic(
+            p0, p1, p2, t,
+            out Vector3 left0, out Vector3 left1, out Vector3 left2,
+            out Vector3 right0, out Vector3 right1, out Vector3 right2
+        );
+
+        DeleteSegmentInternal(segment, deleteOrphanNodes: false);
+
+        RoadSegmentV2 first = CreateSegmentRaw(oldStart, splitNode, oldForward, oldBackward, oldLaneWidth, oldSpeedLimit);
+        if (first != null && !IsQuadraticEffectivelyStraight(left0, left1, left2))
+            first.SetCurve(left1);
+
+        RoadSegmentV2 second = CreateSegmentRaw(splitNode, oldEnd, oldForward, oldBackward, oldLaneWidth, oldSpeedLimit);
+        if (second != null && !IsQuadraticEffectivelyStraight(right0, right1, right2))
+            second.SetCurve(right1);
+
+        DeleteNodeIfOrphaned(oldStart);
+        DeleteNodeIfOrphaned(oldEnd);
+    }
 
     private RoadSegmentV2 CreateSegmentRaw(
         RoadNodeV2 startNode,
@@ -1279,7 +1222,96 @@ Undo.RegisterCreatedObjectUndo(segmentObject, "Create Road Segment");
         return segment;
     }
 
-    public bool DeleteNearestSegmentAtPoint(Vector3 point, float pickDistance)
+    public RoadSegmentV2 CreateCurvedSegment(
+    RoadNodeV2 startNode,
+    RoadNodeV2 endNode,
+    Vector3 controlPoint,
+    int forwardLanes,
+    int backwardLanes,
+    float laneWidth,
+    float speedLimit)
+    {
+        if (startNode == null || endNode == null)
+            return null;
+
+        if (startNode == endNode)
+            return null;
+
+        EnsureRoots();
+        CleanupNulls();
+
+        RoadSegmentV2 existingDirect = FindExistingSegment(startNode, endNode);
+        if (existingDirect != null)
+            return existingDirect;
+
+        Vector3 p0 = startNode.transform.position;
+        Vector3 p1 = new Vector3(controlPoint.x, controlPoint.y, 0f);
+        Vector3 p2 = endNode.transform.position;
+
+        List<Vector3> newPolyline = BuildQuadraticPolyline(p0, p1, p2, 24);
+
+        List<ExistingSegmentIntersection> foundIntersections = new List<ExistingSegmentIntersection>();
+        List<NewSegmentSplitPoint> splitPoints = new List<NewSegmentSplitPoint>
+    {
+        new NewSegmentSplitPoint { t = 0f, node = startNode },
+        new NewSegmentSplitPoint { t = 1f, node = endNode }
+    };
+
+        CollectIntersectionsForNewPolyline(
+            newPolyline,
+            startNode,
+            endNode,
+            foundIntersections,
+            splitPoints
+        );
+
+        SplitIntersectedExistingSegments(foundIntersections);
+
+        splitPoints.Sort((x, y) => x.t.CompareTo(y.t));
+
+        RoadSegmentV2 firstCreated = null;
+
+        for (int i = 0; i < splitPoints.Count - 1; i++)
+        {
+            RoadNodeV2 fromNode = splitPoints[i].node;
+            RoadNodeV2 toNode = splitPoints[i + 1].node;
+
+            if (fromNode == null || toNode == null || fromNode == toNode)
+                continue;
+
+            float t0 = splitPoints[i].t;
+            float t1 = splitPoints[i + 1].t;
+
+            if (t1 <= t0 + intersectionEpsilon)
+                continue;
+
+            if (!TryGetQuadraticSubCurve(p0, p1, p2, t0, t1, out Vector3 subP0, out Vector3 subP1, out Vector3 subP2))
+                continue;
+
+            RoadSegmentV2 created = CreateSegmentRaw(
+                fromNode,
+                toNode,
+                forwardLanes,
+                backwardLanes,
+                laneWidth,
+                speedLimit
+            );
+
+            if (created == null)
+                continue;
+
+            if (!IsQuadraticEffectivelyStraight(subP0, subP1, subP2))
+                created.SetCurve(subP1);
+
+            if (firstCreated == null)
+                firstCreated = created;
+        }
+
+        RefreshAll();
+        return firstCreated;
+    }
+
+    ppublic bool DeleteNearestSegmentAtPoint(Vector3 point, float pickDistance)
     {
         CleanupNulls();
 
@@ -1291,10 +1323,11 @@ Undo.RegisterCreatedObjectUndo(segmentObject, "Create Road Segment");
             if (segment == null || segment.StartNode == null || segment.EndNode == null)
                 continue;
 
-            Vector3 a = segment.StartNode.transform.position;
-            Vector3 b = segment.EndNode.transform.position;
+            List<Vector3> polyline = segment.GetCenterPolylineWorld();
+            if (polyline == null || polyline.Count < 2)
+                continue;
 
-            float distance = DistancePointToSegment(point, a, b);
+            float distance = DistancePointToPolyline(point, polyline);
             float allowedDistance = Mathf.Max(pickDistance, segment.TotalRoadWidth * 0.5f + 0.15f);
 
             if (distance <= allowedDistance && distance < bestDistance)
@@ -1391,6 +1424,9 @@ private void DeleteNodeIfOrphaned(RoadNodeV2 node)
         RoadSegmentV2 second = node.ConnectedSegments[1];
 
         if (first == null || second == null || first == second)
+            return false;
+
+        if (first.IsCurved || second.IsCurved)
             return false;
 
         RoadNodeV2 firstOther = GetOtherNode(first, node);
@@ -1540,6 +1576,280 @@ private void DeleteNodeIfOrphaned(RoadNodeV2 node)
         intersection.z = 0f;
 
         return true;
+    }
+
+    private void CollectIntersectionsForNewPolyline(
+    List<Vector3> newPolyline,
+    RoadNodeV2 newStartNode,
+    RoadNodeV2 newEndNode,
+    List<ExistingSegmentIntersection> foundIntersections,
+    List<NewSegmentSplitPoint> splitPoints)
+    {
+        if (newPolyline == null || newPolyline.Count < 2)
+            return;
+
+        List<RoadSegmentV2> snapshot = new List<RoadSegmentV2>(segments);
+
+        Vector3 a = newStartNode.transform.position;
+        Vector3 b = newEndNode.transform.position;
+
+        foreach (RoadSegmentV2 segment in snapshot)
+        {
+            if (segment == null || segment.StartNode == null || segment.EndNode == null)
+                continue;
+
+            List<Vector3> existingPolyline = segment.GetCenterPolylineWorld();
+            if (existingPolyline == null || existingPolyline.Count < 2)
+                continue;
+
+            if (!TryGetPolylineIntersection(newPolyline, existingPolyline, out Vector3 point, out float tNew, out float tExisting))
+                continue;
+
+            Vector3 c = segment.StartNode.transform.position;
+            Vector3 d = segment.EndNode.transform.position;
+
+            bool isSameStart = Vector3.Distance(point, a) <= intersectionSnapDistance;
+            bool isSameEnd = Vector3.Distance(point, b) <= intersectionSnapDistance;
+            bool isExistingStart = Vector3.Distance(point, c) <= intersectionSnapDistance;
+            bool isExistingEnd = Vector3.Distance(point, d) <= intersectionSnapDistance;
+
+            if ((isSameStart || isSameEnd) && (isExistingStart || isExistingEnd))
+                continue;
+
+            RoadNodeV2 intersectionNode = ResolveIntersectionNode(
+                segment,
+                point,
+                tExisting,
+                newStartNode,
+                newEndNode,
+                tNew
+            );
+
+            if (intersectionNode == null)
+                continue;
+
+            foundIntersections.Add(new ExistingSegmentIntersection
+            {
+                segment = segment,
+                node = intersectionNode,
+                existingT = tExisting,
+                newSegmentT = tNew
+            });
+
+            AddSplitPoint(splitPoints, tNew, intersectionNode);
+        }
+    }
+
+    private void SplitIntersectedExistingSegments(List<ExistingSegmentIntersection> foundIntersections)
+    {
+        HashSet<RoadSegmentV2> alreadySplit = new HashSet<RoadSegmentV2>();
+
+        foreach (ExistingSegmentIntersection intersection in foundIntersections)
+        {
+            if (intersection == null || intersection.segment == null || intersection.node == null)
+                continue;
+
+            if (alreadySplit.Contains(intersection.segment))
+                continue;
+
+            bool interiorExisting =
+                intersection.existingT > intersectionEpsilon &&
+                intersection.existingT < 1f - intersectionEpsilon;
+
+            if (!interiorExisting)
+                continue;
+
+            SplitExistingSegment(intersection.segment, intersection.node, intersection.existingT);
+            alreadySplit.Add(intersection.segment);
+        }
+    }
+
+    private bool TryGetPolylineIntersection(
+        List<Vector3> firstPolyline,
+        List<Vector3> secondPolyline,
+        out Vector3 intersection,
+        out float firstT,
+        out float secondT)
+    {
+        intersection = Vector3.zero;
+        firstT = 0f;
+        secondT = 0f;
+
+        if (firstPolyline == null || secondPolyline == null)
+            return false;
+
+        if (firstPolyline.Count < 2 || secondPolyline.Count < 2)
+            return false;
+
+        bool found = false;
+        float bestFirstT = float.MaxValue;
+        int firstSegmentCount = firstPolyline.Count - 1;
+        int secondSegmentCount = secondPolyline.Count - 1;
+
+        for (int i = 0; i < firstSegmentCount; i++)
+        {
+            Vector3 a0 = firstPolyline[i];
+            Vector3 a1 = firstPolyline[i + 1];
+
+            for (int j = 0; j < secondSegmentCount; j++)
+            {
+                Vector3 b0 = secondPolyline[j];
+                Vector3 b1 = secondPolyline[j + 1];
+
+                if (!TryGetSegmentIntersection(a0, a1, b0, b1, out Vector3 point, out float localTA, out float localTB))
+                    continue;
+
+                float globalTA = (i + localTA) / Mathf.Max(1, firstSegmentCount);
+                float globalTB = (j + localTB) / Mathf.Max(1, secondSegmentCount);
+
+                if (!found || globalTA < bestFirstT)
+                {
+                    found = true;
+                    bestFirstT = globalTA;
+                    intersection = point;
+                    firstT = Mathf.Clamp01(globalTA);
+                    secondT = Mathf.Clamp01(globalTB);
+                }
+            }
+        }
+
+        return found;
+    }
+
+    private List<Vector3> BuildQuadraticPolyline(Vector3 p0, Vector3 p1, Vector3 p2, int sampleCount)
+    {
+        List<Vector3> points = new List<Vector3>();
+        int samples = Mathf.Clamp(sampleCount, 4, 64);
+
+        for (int i = 0; i <= samples; i++)
+        {
+            float t = i / (float)samples;
+            points.Add(EvaluateQuadraticBezier(p0, p1, p2, t));
+        }
+
+        return points;
+    }
+
+    private Vector3 ProjectPointOntoPolyline(Vector3 point, List<Vector3> polyline)
+    {
+        Vector3 bestPoint = point;
+        float bestDistance = float.MaxValue;
+
+        if (polyline == null || polyline.Count < 2)
+            return point;
+
+        for (int i = 0; i < polyline.Count - 1; i++)
+        {
+            Vector3 candidate = ProjectPointOntoSegment(point, polyline[i], polyline[i + 1]);
+            float distance = Vector3.Distance(point, candidate);
+
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                bestPoint = candidate;
+            }
+        }
+
+        return bestPoint;
+    }
+
+    private float DistancePointToPolyline(Vector3 point, List<Vector3> polyline)
+    {
+        float bestDistance = float.MaxValue;
+
+        if (polyline == null || polyline.Count < 2)
+            return bestDistance;
+
+        for (int i = 0; i < polyline.Count - 1; i++)
+        {
+            float distance = DistancePointToSegment(point, polyline[i], polyline[i + 1]);
+            if (distance < bestDistance)
+                bestDistance = distance;
+        }
+
+        return bestDistance;
+    }
+
+    private void SplitQuadratic(
+        Vector3 p0,
+        Vector3 p1,
+        Vector3 p2,
+        float t,
+        out Vector3 left0,
+        out Vector3 left1,
+        out Vector3 left2,
+        out Vector3 right0,
+        out Vector3 right1,
+        out Vector3 right2)
+    {
+        Vector3 p01 = Vector3.Lerp(p0, p1, t);
+        Vector3 p12 = Vector3.Lerp(p1, p2, t);
+        Vector3 p012 = Vector3.Lerp(p01, p12, t);
+
+        left0 = p0;
+        left1 = p01;
+        left2 = p012;
+
+        right0 = p012;
+        right1 = p12;
+        right2 = p2;
+    }
+
+    private bool TryGetQuadraticSubCurve(
+        Vector3 p0,
+        Vector3 p1,
+        Vector3 p2,
+        float t0,
+        float t1,
+        out Vector3 sub0,
+        out Vector3 sub1,
+        out Vector3 sub2)
+    {
+        sub0 = p0;
+        sub1 = p1;
+        sub2 = p2;
+
+        t0 = Mathf.Clamp01(t0);
+        t1 = Mathf.Clamp01(t1);
+
+        if (t1 <= t0 + 0.0001f)
+            return false;
+
+        if (t0 <= 0f && t1 >= 1f)
+            return true;
+
+        if (t0 <= 0f)
+        {
+            SplitQuadratic(p0, p1, p2, t1,
+                out sub0, out sub1, out sub2,
+                out _, out _, out _);
+            return true;
+        }
+
+        if (t1 >= 1f)
+        {
+            SplitQuadratic(p0, p1, p2, t0,
+                out _, out _, out _,
+                out sub0, out sub1, out sub2);
+            return true;
+        }
+
+        SplitQuadratic(p0, p1, p2, t1,
+            out Vector3 left0, out Vector3 left1, out Vector3 left2,
+            out _, out _, out _);
+
+        float localT = t0 / t1;
+
+        SplitQuadratic(left0, left1, left2, localT,
+            out _, out _, out _,
+            out sub0, out sub1, out sub2);
+
+        return true;
+    }
+
+    private bool IsQuadraticEffectivelyStraight(Vector3 p0, Vector3 p1, Vector3 p2)
+    {
+        return DistancePointToSegment(p1, p0, p2) <= 0.02f;
     }
 
     private float Cross(Vector2 a, Vector2 b)

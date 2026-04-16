@@ -319,7 +319,7 @@ public class RoadBuildToolV2Editor : Editor
                 return "Режим рисования: ЛКМ ставит узел или создает сегмент. Esc завершает текущую цепочку.";
 
             case RoadBuildToolV2.ToolMode.DrawCurveRoad:
-                return "Режим кривой: ЛКМ точка A, ЛКМ точка B, ЛКМ точка C — дорога изгибается к C и строится.";
+                return "Режим кривой: ЛКМ точка A — старт, ЛКМ точка B — точка изгиба, затем конец дороги идет за курсором. Третий ЛКМ фиксирует конец C. При continueChain следующая кривая продолжается симметрично.";
 
             case RoadBuildToolV2.ToolMode.DeleteRoad:
                 return "Режим удаления: ЛКМ удаляет ближайший сегмент дороги.";

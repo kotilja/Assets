@@ -609,29 +609,36 @@ private void OnDestroy()
 
     private float GetNodeCutDistance(RoadNodeV2 node, float segmentLength)
     {
+        if (node == null)
+            return 0f;
+
+        // Для тупиков и обычных стыков из двух сегментов ничего не режем.
+        // Режем только на настоящих перекрестках.
+        if (node.ConnectedSegments == null || node.ConnectedSegments.Count <= 2)
+            return 0f;
+
         float cut = junctionInset;
+        float maxOtherHalfWidth = 0f;
 
-        if (node != null)
+        for (int i = 0; i < node.ConnectedSegments.Count; i++)
         {
-            float maxOtherHalfWidth = 0f;
+            RoadSegmentV2 other = node.ConnectedSegments[i];
 
-            for (int i = 0; i < node.ConnectedSegments.Count; i++)
-            {
-                RoadSegmentV2 other = node.ConnectedSegments[i];
+            if (other == null || other == this)
+                continue;
 
-                if (other == null || other == this)
-                    continue;
-
-                maxOtherHalfWidth = Mathf.Max(maxOtherHalfWidth, other.TotalRoadWidth * 0.5f);
-            }
-
-            if (maxOtherHalfWidth > 0f)
-            {
-                cut = Mathf.Max(cut, maxOtherHalfWidth + laneWidth * 0.25f);
-            }
+            maxOtherHalfWidth = Mathf.Max(maxOtherHalfWidth, other.TotalRoadWidth * 0.5f);
         }
 
+        if (maxOtherHalfWidth > 0f)
+            cut = Mathf.Max(cut, maxOtherHalfWidth + laneWidth * 0.25f);
+
         return Mathf.Clamp(cut, 0f, segmentLength * 0.45f);
+    }
+
+    public List<Vector3> GetCenterPolylineWorld()
+    {
+        return BuildCenterPolyline();
     }
 
     private List<Vector3> BuildCenterPolyline()
