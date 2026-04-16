@@ -1069,9 +1069,6 @@ private void AddManualConnection(RoadNodeV2 node, RoadLaneDataV2 fromLane, RoadL
         return firstCreated;
     }
 
-    if (first.IsCurved || second.IsCurved)
-    return false;
-
     private void AddSplitPoint(List<NewSegmentSplitPoint> splitPoints, float t, RoadNodeV2 node)
     {
         if (splitPoints == null || node == null)
@@ -1311,7 +1308,7 @@ Undo.RegisterCreatedObjectUndo(segmentObject, "Create Road Segment");
         return firstCreated;
     }
 
-    ppublic bool DeleteNearestSegmentAtPoint(Vector3 point, float pickDistance)
+    public bool DeleteNearestSegmentAtPoint(Vector3 point, float pickDistance)
     {
         CleanupNulls();
 

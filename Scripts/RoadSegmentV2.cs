@@ -612,8 +612,6 @@ private void OnDestroy()
         if (node == null)
             return 0f;
 
-        // Для тупиков и обычных стыков из двух сегментов ничего не режем.
-        // Режем только на настоящих перекрестках.
         if (node.ConnectedSegments == null || node.ConnectedSegments.Count <= 2)
             return 0f;
 
@@ -628,12 +626,57 @@ private void OnDestroy()
                 continue;
 
             maxOtherHalfWidth = Mathf.Max(maxOtherHalfWidth, other.TotalRoadWidth * 0.5f);
+
+            Vector3 thisDir = GetDirectionAwayFromNode(node);
+            Vector3 otherDir = other.GetDirectionAwayFromNode(node);
+
+            if (thisDir.sqrMagnitude < 0.0001f || otherDir.sqrMagnitude < 0.0001f)
+                continue;
+
+            float angle = Vector3.Angle(thisDir, otherDir);
+            if (angle > 90f)
+                angle = 180f - angle;
+
+            if (angle < 8f)
+                continue;
+
+            float sinAngle = Mathf.Sin(angle * Mathf.Deg2Rad);
+            if (sinAngle < 0.0001f)
+                continue;
+
+            float thisHalfWidth = TotalRoadWidth * 0.5f;
+            float otherHalfWidth = other.TotalRoadWidth * 0.5f;
+            float acuteAngleCut = (thisHalfWidth + otherHalfWidth) / sinAngle;
+            cut = Mathf.Max(cut, acuteAngleCut + laneWidth * 0.25f);
         }
 
         if (maxOtherHalfWidth > 0f)
             cut = Mathf.Max(cut, maxOtherHalfWidth + laneWidth * 0.25f);
 
-        return Mathf.Clamp(cut, 0f, segmentLength * 0.45f);
+        float maxAllowedCut = Mathf.Max(0f, segmentLength - Mathf.Max(laneWidth * 0.75f, 0.2f));
+        return Mathf.Clamp(cut, 0f, maxAllowedCut);
+    }
+
+    private Vector3 GetDirectionAwayFromNode(RoadNodeV2 node)
+    {
+        if (node == null)
+            return Vector3.zero;
+
+        List<Vector3> centerPolyline = BuildCenterPolyline();
+        if (centerPolyline == null || centerPolyline.Count < 2)
+            return Vector3.zero;
+
+        Vector3 dir;
+
+        if (node == startNode)
+            dir = centerPolyline[1] - centerPolyline[0];
+        else if (node == endNode)
+            dir = centerPolyline[centerPolyline.Count - 2] - centerPolyline[centerPolyline.Count - 1];
+        else
+            return Vector3.zero;
+
+        dir.z = 0f;
+        return dir.normalized;
     }
 
     public List<Vector3> GetCenterPolylineWorld()
