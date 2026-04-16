@@ -849,14 +849,53 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         if (a.incomingLane == null || a.outgoingLane == null || b.incomingLane == null || b.outgoingLane == null)
             return true;
 
+        if (AreParallelMovementsCompatible(a, b))
+            return false;
+
         List<Vector3> pathA = BuildGateConflictPath(a);
         List<Vector3> pathB = BuildGateConflictPath(b);
 
         if (pathA.Count < 2 || pathB.Count < 2)
             return true;
 
-        float clearance = Mathf.Max(0.08f, laneCheckWidth * 0.75f);
+        float clearance = Mathf.Max(0.06f, laneCheckWidth * 0.45f);
         return DoPolylinesConflict(pathA, pathB, clearance);
+    }
+
+    private bool AreParallelMovementsCompatible(GateInfo a, GateInfo b)
+    {
+        if (a == null || b == null)
+            return false;
+
+        if (a.incomingLane == null || a.outgoingLane == null || b.incomingLane == null || b.outgoingLane == null)
+            return false;
+
+        if (a.incomingSegment == null || b.incomingSegment == null)
+            return false;
+
+        if (a.incomingSegment != b.incomingSegment)
+            return false;
+
+        if (a.outgoingLane.ownerSegment == null || b.outgoingLane.ownerSegment == null)
+            return false;
+
+        if (a.outgoingLane.ownerSegment != b.outgoingLane.ownerSegment)
+            return false;
+
+        if (a.incomingLane == b.incomingLane)
+            return false;
+
+        if (a.outgoingLane == b.outgoingLane)
+            return false;
+
+        int incomingOrder = a.incomingLane.localLaneIndex.CompareTo(b.incomingLane.localLaneIndex);
+        int outgoingOrder = a.outgoingLane.localLaneIndex.CompareTo(b.outgoingLane.localLaneIndex);
+
+        // Если порядок полос сохраняется, траектории не пересекаются.
+        if (incomingOrder == 0 || outgoingOrder == 0)
+            return false;
+
+        return incomingOrder == outgoingOrder;
     }
 
     private List<Vector3> BuildGateConflictPath(GateInfo gate)
