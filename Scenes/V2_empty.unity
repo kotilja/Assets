@@ -122,6 +122,70 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
+--- !u!1 &111784032
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 111784034}
+  - component: {fileID: 111784033}
+  m_Layer: 0
+  m_Name: RoadVehicleSpawnerV2 (5)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &111784033
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 111784032}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 547f16992f1ff00498401a2331ef9a63, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  network: {fileID: 160746227}
+  vehiclePrefab: {fileID: 2312824649979254897, guid: 3d9108d990934cd4c95718ef3a1e646c, type: 3}
+  useNearestNodeFromTransform: 1
+  startNode: {fileID: 0}
+  targetNode: {fileID: 0}
+  startNodeSearchRadius: 1.25
+  spawnOnPlay: 0
+  autoSpawn: 0
+  spawnInterval: 3
+  maxAliveVehicles: 0
+  spawnFromRightmostLane: 1
+  enableDebugKeyboard: 1
+  spawnKey: 32
+  swapDirectionKey: 114
+  logPathResult: 1
+  drawGizmos: 1
+  gizmoRadius: 0.18
+  spawnerColor: {r: 0.2, g: 1, b: 1, a: 0.9}
+  startLinkColor: {r: 0.3, g: 1, b: 0.3, a: 0.9}
+  targetLinkColor: {r: 1, g: 0.9, b: 0.2, a: 0.9}
+--- !u!4 &111784034
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 111784032}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 11.99, y: 0.022600781, z: 0.04952459}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &160746226
 GameObject:
   m_ObjectHideFlags: 0
@@ -151,18 +215,931 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8c8c7b9c06d41c748a38ab46580faf5e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  nodesRoot: {fileID: 0}
-  segmentsRoot: {fileID: 0}
-  nodes: []
-  segments: []
-  allLanes: []
-  allConnections: []
+  nodesRoot: {fileID: 800559762}
+  segmentsRoot: {fileID: 1314350185}
+  nodes:
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  segments:
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  allLanes:
+  - laneId: 20700
+    ownerSegment: {fileID: 0}
+    localLaneIndex: 0
+    direction: 0
+    start: {x: -10.700878, y: -0.2962187, z: 0}
+    end: {x: -4.837638, y: -0.2901173, z: 0}
+    fromNode: {fileID: 0}
+    toNode: {fileID: 0}
+  - laneId: 20701
+    ownerSegment: {fileID: 0}
+    localLaneIndex: 0
+    direction: 1
+    start: {x: -4.8382626, y: 0.30988243, z: 0}
+    end: {x: -10.701502, y: 0.30378103, z: 0}
+    fromNode: {fileID: 0}
+    toNode: {fileID: 0}
+  - laneId: 20900
+    ownerSegment: {fileID: 0}
+    localLaneIndex: 0
+    direction: 0
+    start: {x: -4.387951, y: 4.6271586, z: 0}
+    end: {x: -4.387951, y: 0.76066303, z: 0}
+    fromNode: {fileID: 0}
+    toNode: {fileID: 0}
+  - laneId: 20901
+    ownerSegment: {fileID: 0}
+    localLaneIndex: 0
+    direction: 1
+    start: {x: -3.7879508, y: 0.76066303, z: 0}
+    end: {x: -3.7879508, y: 4.6271586, z: 0}
+    fromNode: {fileID: 0}
+    toNode: {fileID: 0}
+  - laneId: 21000
+    ownerSegment: {fileID: 0}
+    localLaneIndex: 0
+    direction: 0
+    start: {x: -4.387951, y: -0.73933697, z: 0}
+    end: {x: -4.387951, y: -4.5046563, z: 0}
+    fromNode: {fileID: 0}
+    toNode: {fileID: 0}
+  - laneId: 21001
+    ownerSegment: {fileID: 0}
+    localLaneIndex: 0
+    direction: 1
+    start: {x: -3.7879508, y: -4.5046563, z: 0}
+    end: {x: -3.7879508, y: -0.73933697, z: 0}
+    fromNode: {fileID: 0}
+    toNode: {fileID: 0}
+  - laneId: 21100
+    ownerSegment: {fileID: 0}
+    localLaneIndex: 0
+    direction: 0
+    start: {x: -3.3376389, y: -0.28855643, z: 0}
+    end: {x: 5.364071, y: -0.2795019, z: 0}
+    fromNode: {fileID: 0}
+    toNode: {fileID: 0}
+  - laneId: 21101
+    ownerSegment: {fileID: 0}
+    localLaneIndex: 0
+    direction: 1
+    start: {x: 5.363446, y: 0.32049784, z: 0}
+    end: {x: -3.3382635, y: 0.3114433, z: 0}
+    fromNode: {fileID: 0}
+    toNode: {fileID: 0}
+  - laneId: 21200
+    ownerSegment: {fileID: 0}
+    localLaneIndex: 0
+    direction: 0
+    start: {x: 6.86407, y: -0.277941, z: 0}
+    end: {x: 10.830589, y: -0.27381313, z: 0}
+    fromNode: {fileID: 0}
+    toNode: {fileID: 0}
+  - laneId: 21201
+    ownerSegment: {fileID: 0}
+    localLaneIndex: 0
+    direction: 1
+    start: {x: 10.829966, y: 0.3261866, z: 0}
+    end: {x: 6.8634453, y: 0.32205874, z: 0}
+    fromNode: {fileID: 0}
+    toNode: {fileID: 0}
+  - laneId: 21300
+    ownerSegment: {fileID: 0}
+    localLaneIndex: 0
+    direction: 0
+    start: {x: 5.8354797, y: 4.605451, z: 0}
+    end: {x: 5.8173156, y: 0.7726917, z: 0}
+    fromNode: {fileID: 0}
+    toNode: {fileID: 0}
+  - laneId: 21301
+    ownerSegment: {fileID: 0}
+    localLaneIndex: 0
+    direction: 1
+    start: {x: 6.4173093, y: 0.7698482, z: 0}
+    end: {x: 6.4354734, y: 4.6026073, z: 0}
+    fromNode: {fileID: 0}
+    toNode: {fileID: 0}
+  - laneId: 21400
+    ownerSegment: {fileID: 0}
+    localLaneIndex: 0
+    direction: 0
+    start: {x: 5.810207, y: -0.7272914, z: 0}
+    end: {x: 5.7925315, y: -4.4569707, z: 0}
+    fromNode: {fileID: 0}
+    toNode: {fileID: 0}
+  - laneId: 21401
+    ownerSegment: {fileID: 0}
+    localLaneIndex: 0
+    direction: 1
+    start: {x: 6.392525, y: -4.4598145, z: 0}
+    end: {x: 6.4102006, y: -0.7301349, z: 0}
+    fromNode: {fileID: 0}
+    toNode: {fileID: 0}
+  allConnections:
+  - fromLane:
+      laneId: 20700
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 0
+      start: {x: -10.700878, y: -0.2962187, z: 0}
+      end: {x: -4.837638, y: -0.2901173, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    toLane:
+      laneId: 21100
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 0
+      start: {x: -3.3376389, y: -0.28855643, z: 0}
+      end: {x: 5.364071, y: -0.2795019, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    connectionKind: 0
+    isManual: 0
+    junctionNode: {fileID: 0}
+    junctionPoint: {x: -4.0879507, y: 0.0106630325, z: 0}
+    turnScore: -0
+    movementType: 0
+    fromDistanceOnLane: 0
+    toDistanceOnLane: 0
+    curvePoints:
+    - {x: -4.837638, y: -0.2901173, z: 0}
+    - {x: -4.0876384, y: -0.28933686, z: 0}
+    - {x: -3.3376389, y: -0.28855643, z: 0}
+  - fromLane:
+      laneId: 20700
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 0
+      start: {x: -10.700878, y: -0.2962187, z: 0}
+      end: {x: -4.837638, y: -0.2901173, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    toLane:
+      laneId: 21000
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 0
+      start: {x: -4.387951, y: -0.73933697, z: 0}
+      end: {x: -4.387951, y: -4.5046563, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    connectionKind: 0
+    isManual: 0
+    junctionNode: {fileID: 0}
+    junctionPoint: {x: -4.0879507, y: 0.0106630325, z: 0}
+    turnScore: -90.05962
+    movementType: 2
+    fromDistanceOnLane: 0
+    toDistanceOnLane: 0
+    curvePoints:
+    - {x: -4.837638, y: -0.2901173, z: 0}
+    - {x: -4.5901, y: -0.2901173, z: 0}
+    - {x: -4.5016594, y: -0.3027516, z: 0}
+    - {x: -4.438488, y: -0.34065452, z: 0}
+    - {x: -4.400585, y: -0.403826, z: 0}
+    - {x: -4.387951, y: -0.49226615, z: 0}
+    - {x: -4.387951, y: -0.73933697, z: 0}
+  - fromLane:
+      laneId: 20700
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 0
+      start: {x: -10.700878, y: -0.2962187, z: 0}
+      end: {x: -4.837638, y: -0.2901173, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    toLane:
+      laneId: 20901
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 1
+      start: {x: -3.7879508, y: 0.76066303, z: 0}
+      end: {x: -3.7879508, y: 4.6271586, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    connectionKind: 0
+    isManual: 0
+    junctionNode: {fileID: 0}
+    junctionPoint: {x: -4.0879507, y: 0.0106630325, z: 0}
+    turnScore: 89.94038
+    movementType: 1
+    fromDistanceOnLane: 0
+    toDistanceOnLane: 0
+    curvePoints:
+    - {x: -4.837638, y: -0.2901173, z: 0}
+    - {x: -4.237951, y: -0.2901173, z: 0}
+    - {x: -4.0410757, y: -0.2619923, z: 0}
+    - {x: -3.9004507, y: -0.1776173, z: 0}
+    - {x: -3.8160758, y: -0.03699228, z: 0}
+    - {x: -3.7879508, y: 0.15988272, z: 0}
+    - {x: -3.7879508, y: 0.76066303, z: 0}
+  - fromLane:
+      laneId: 20900
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 0
+      start: {x: -4.387951, y: 4.6271586, z: 0}
+      end: {x: -4.387951, y: 0.76066303, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    toLane:
+      laneId: 21000
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 0
+      start: {x: -4.387951, y: -0.73933697, z: 0}
+      end: {x: -4.387951, y: -4.5046563, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    connectionKind: 0
+    isManual: 0
+    junctionNode: {fileID: 0}
+    junctionPoint: {x: -4.0879507, y: 0.0106630325, z: 0}
+    turnScore: 0
+    movementType: 0
+    fromDistanceOnLane: 0
+    toDistanceOnLane: 0
+    curvePoints:
+    - {x: -4.387951, y: 0.76066303, z: 0}
+    - {x: -4.387951, y: 0.0106630325, z: 0}
+    - {x: -4.387951, y: -0.73933697, z: 0}
+  - fromLane:
+      laneId: 20900
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 0
+      start: {x: -4.387951, y: 4.6271586, z: 0}
+      end: {x: -4.387951, y: 0.76066303, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    toLane:
+      laneId: 20701
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 1
+      start: {x: -4.8382626, y: 0.30988243, z: 0}
+      end: {x: -10.701502, y: 0.30378103, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    connectionKind: 0
+    isManual: 0
+    junctionNode: {fileID: 0}
+    junctionPoint: {x: -4.0879507, y: 0.0106630325, z: 0}
+    turnScore: -89.94038
+    movementType: 2
+    fromDistanceOnLane: 0
+    toDistanceOnLane: 0
+    curvePoints:
+    - {x: -4.387951, y: 0.76066303, z: 0}
+    - {x: -4.387951, y: 0.5125227, z: 0}
+    - {x: -4.4006157, y: 0.4238676, z: 0}
+    - {x: -4.438611, y: 0.36054248, z: 0}
+    - {x: -4.501936, y: 0.32254744, z: 0}
+    - {x: -4.590591, y: 0.30988243, z: 0}
+    - {x: -4.8382626, y: 0.30988243, z: 0}
+  - fromLane:
+      laneId: 20900
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 0
+      start: {x: -4.387951, y: 4.6271586, z: 0}
+      end: {x: -4.387951, y: 0.76066303, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    toLane:
+      laneId: 21100
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 0
+      start: {x: -3.3376389, y: -0.28855643, z: 0}
+      end: {x: 5.364071, y: -0.2795019, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    connectionKind: 0
+    isManual: 0
+    junctionNode: {fileID: 0}
+    junctionPoint: {x: -4.0879507, y: 0.0106630325, z: 0}
+    turnScore: 90.059616
+    movementType: 1
+    fromDistanceOnLane: 0
+    toDistanceOnLane: 0
+    curvePoints:
+    - {x: -4.387951, y: 0.76066303, z: 0}
+    - {x: -4.387951, y: 0.16144359, z: 0}
+    - {x: -4.3598256, y: -0.035431415, z: 0}
+    - {x: -4.2754507, y: -0.17605641, z: 0}
+    - {x: -4.1348257, y: -0.2604314, z: 0}
+    - {x: -3.9379508, y: -0.28855643, z: 0}
+    - {x: -3.3376389, y: -0.28855643, z: 0}
+  - fromLane:
+      laneId: 21001
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 1
+      start: {x: -3.7879508, y: -4.5046563, z: 0}
+      end: {x: -3.7879508, y: -0.73933697, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    toLane:
+      laneId: 20901
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 1
+      start: {x: -3.7879508, y: 0.76066303, z: 0}
+      end: {x: -3.7879508, y: 4.6271586, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    connectionKind: 0
+    isManual: 0
+    junctionNode: {fileID: 0}
+    junctionPoint: {x: -4.0879507, y: 0.0106630325, z: 0}
+    turnScore: 0
+    movementType: 0
+    fromDistanceOnLane: 0
+    toDistanceOnLane: 0
+    curvePoints:
+    - {x: -3.7879508, y: -0.73933697, z: 0}
+    - {x: -3.7879508, y: 0.0106630325, z: 0}
+    - {x: -3.7879508, y: 0.76066303, z: 0}
+  - fromLane:
+      laneId: 21001
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 1
+      start: {x: -3.7879508, y: -4.5046563, z: 0}
+      end: {x: -3.7879508, y: -0.73933697, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    toLane:
+      laneId: 21100
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 0
+      start: {x: -3.3376389, y: -0.28855643, z: 0}
+      end: {x: 5.364071, y: -0.2795019, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    connectionKind: 0
+    isManual: 0
+    junctionNode: {fileID: 0}
+    junctionPoint: {x: -4.0879507, y: 0.0106630325, z: 0}
+    turnScore: -89.940384
+    movementType: 2
+    fromDistanceOnLane: 0
+    toDistanceOnLane: 0
+    curvePoints:
+    - {x: -3.7879508, y: -0.73933697, z: 0}
+    - {x: -3.7879508, y: -0.49119678, z: 0}
+    - {x: -3.7752857, y: -0.40254164, z: 0}
+    - {x: -3.7372909, y: -0.33921653, z: 0}
+    - {x: -3.6739657, y: -0.30122143, z: 0}
+    - {x: -3.5853105, y: -0.28855643, z: 0}
+    - {x: -3.3376389, y: -0.28855643, z: 0}
+  - fromLane:
+      laneId: 21001
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 1
+      start: {x: -3.7879508, y: -4.5046563, z: 0}
+      end: {x: -3.7879508, y: -0.73933697, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    toLane:
+      laneId: 20701
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 1
+      start: {x: -4.8382626, y: 0.30988243, z: 0}
+      end: {x: -10.701502, y: 0.30378103, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    connectionKind: 0
+    isManual: 0
+    junctionNode: {fileID: 0}
+    junctionPoint: {x: -4.0879507, y: 0.0106630325, z: 0}
+    turnScore: 90.05962
+    movementType: 1
+    fromDistanceOnLane: 0
+    toDistanceOnLane: 0
+    curvePoints:
+    - {x: -3.7879508, y: -0.73933697, z: 0}
+    - {x: -3.7879508, y: -0.14011759, z: 0}
+    - {x: -3.8160756, y: 0.05675742, z: 0}
+    - {x: -3.9004507, y: 0.19738242, z: 0}
+    - {x: -4.0410757, y: 0.2817574, z: 0}
+    - {x: -4.237951, y: 0.30988243, z: 0}
+    - {x: -4.8382626, y: 0.30988243, z: 0}
+  - fromLane:
+      laneId: 21101
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 1
+      start: {x: 5.363446, y: 0.32049784, z: 0}
+      end: {x: -3.3382635, y: 0.3114433, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    toLane:
+      laneId: 20701
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 1
+      start: {x: -4.8382626, y: 0.30988243, z: 0}
+      end: {x: -10.701502, y: 0.30378103, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    connectionKind: 0
+    isManual: 0
+    junctionNode: {fileID: 0}
+    junctionPoint: {x: -4.0879507, y: 0.0106630325, z: 0}
+    turnScore: 0
+    movementType: 0
+    fromDistanceOnLane: 0
+    toDistanceOnLane: 0
+    curvePoints:
+    - {x: -3.3382635, y: 0.3114433, z: 0}
+    - {x: -4.088263, y: 0.31066287, z: 0}
+    - {x: -4.8382626, y: 0.30988243, z: 0}
+  - fromLane:
+      laneId: 21101
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 1
+      start: {x: 5.363446, y: 0.32049784, z: 0}
+      end: {x: -3.3382635, y: 0.3114433, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    toLane:
+      laneId: 20901
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 1
+      start: {x: -3.7879508, y: 0.76066303, z: 0}
+      end: {x: -3.7879508, y: 4.6271586, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    connectionKind: 0
+    isManual: 0
+    junctionNode: {fileID: 0}
+    junctionPoint: {x: -4.0879507, y: 0.0106630325, z: 0}
+    turnScore: -90.059616
+    movementType: 2
+    fromDistanceOnLane: 0
+    toDistanceOnLane: 0
+    curvePoints:
+    - {x: -3.3382635, y: 0.3114433, z: 0}
+    - {x: -3.5858018, y: 0.3114433, z: 0}
+    - {x: -3.6742423, y: 0.3240776, z: 0}
+    - {x: -3.7374134, y: 0.3619805, z: 0}
+    - {x: -3.7753165, y: 0.42515206, z: 0}
+    - {x: -3.7879508, y: 0.5135922, z: 0}
+    - {x: -3.7879508, y: 0.76066303, z: 0}
+  - fromLane:
+      laneId: 21101
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 1
+      start: {x: 5.363446, y: 0.32049784, z: 0}
+      end: {x: -3.3382635, y: 0.3114433, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    toLane:
+      laneId: 21000
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 0
+      start: {x: -4.387951, y: -0.73933697, z: 0}
+      end: {x: -4.387951, y: -4.5046563, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    connectionKind: 0
+    isManual: 0
+    junctionNode: {fileID: 0}
+    junctionPoint: {x: -4.0879507, y: 0.0106630325, z: 0}
+    turnScore: 89.940384
+    movementType: 1
+    fromDistanceOnLane: 0
+    toDistanceOnLane: 0
+    curvePoints:
+    - {x: -3.3382635, y: 0.3114433, z: 0}
+    - {x: -3.9379508, y: 0.3114433, z: 0}
+    - {x: -4.1348257, y: 0.28331828, z: 0}
+    - {x: -4.2754507, y: 0.19894329, z: 0}
+    - {x: -4.359826, y: 0.058318287, z: 0}
+    - {x: -4.387951, y: -0.13855672, z: 0}
+    - {x: -4.387951, y: -0.73933697, z: 0}
+  - fromLane:
+      laneId: 21100
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 0
+      start: {x: -3.3376389, y: -0.28855643, z: 0}
+      end: {x: 5.364071, y: -0.2795019, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    toLane:
+      laneId: 21200
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 0
+      start: {x: 6.86407, y: -0.277941, z: 0}
+      end: {x: 10.830589, y: -0.27381313, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    connectionKind: 0
+    isManual: 0
+    junctionNode: {fileID: 0}
+    junctionPoint: {x: 6.113758, y: 0.021278381, z: 0}
+    turnScore: 0
+    movementType: 0
+    fromDistanceOnLane: 0
+    toDistanceOnLane: 0
+    curvePoints:
+    - {x: 5.364071, y: -0.2795019, z: 0}
+    - {x: 6.1140704, y: -0.27872145, z: 0}
+    - {x: 6.86407, y: -0.277941, z: 0}
+  - fromLane:
+      laneId: 21100
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 0
+      start: {x: -3.3376389, y: -0.28855643, z: 0}
+      end: {x: 5.364071, y: -0.2795019, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    toLane:
+      laneId: 21400
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 0
+      start: {x: 5.810207, y: -0.7272914, z: 0}
+      end: {x: 5.7925315, y: -4.4569707, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    connectionKind: 0
+    isManual: 0
+    junctionNode: {fileID: 0}
+    junctionPoint: {x: 6.113758, y: 0.021278381, z: 0}
+    turnScore: -90.331154
+    movementType: 2
+    fromDistanceOnLane: 0
+    toDistanceOnLane: 0
+    curvePoints:
+    - {x: 5.364071, y: -0.2795019, z: 0}
+    - {x: 5.6094456, y: -0.2795019, z: 0}
+    - {x: 5.6972785, y: -0.29204947, z: 0}
+    - {x: 5.7600164, y: -0.32969218, z: 0}
+    - {x: 5.7976594, y: -0.39243007, z: 0}
+    - {x: 5.810207, y: -0.48026308, z: 0}
+    - {x: 5.810207, y: -0.7272914, z: 0}
+  - fromLane:
+      laneId: 21100
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 0
+      start: {x: -3.3376389, y: -0.28855643, z: 0}
+      end: {x: 5.364071, y: -0.2795019, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    toLane:
+      laneId: 21301
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 1
+      start: {x: 6.4173093, y: 0.7698482, z: 0}
+      end: {x: 6.4354734, y: 4.6026073, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    connectionKind: 0
+    isManual: 0
+    junctionNode: {fileID: 0}
+    junctionPoint: {x: 6.113758, y: 0.021278381, z: 0}
+    turnScore: 89.668846
+    movementType: 1
+    fromDistanceOnLane: 0
+    toDistanceOnLane: 0
+    curvePoints:
+    - {x: 5.364071, y: -0.2795019, z: 0}
+    - {x: 5.9673095, y: -0.2795019, z: 0}
+    - {x: 6.1641846, y: -0.25137687, z: 0}
+    - {x: 6.304809, y: -0.16700187, z: 0}
+    - {x: 6.389184, y: -0.026376873, z: 0}
+    - {x: 6.4173093, y: 0.17049813, z: 0}
+    - {x: 6.4173093, y: 0.7698482, z: 0}
+  - fromLane:
+      laneId: 21201
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 1
+      start: {x: 10.829966, y: 0.3261866, z: 0}
+      end: {x: 6.8634453, y: 0.32205874, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    toLane:
+      laneId: 21101
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 1
+      start: {x: 5.363446, y: 0.32049784, z: 0}
+      end: {x: -3.3382635, y: 0.3114433, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    connectionKind: 0
+    isManual: 0
+    junctionNode: {fileID: 0}
+    junctionPoint: {x: 6.113758, y: 0.021278381, z: 0}
+    turnScore: -0
+    movementType: 0
+    fromDistanceOnLane: 0
+    toDistanceOnLane: 0
+    curvePoints:
+    - {x: 6.8634453, y: 0.32205874, z: 0}
+    - {x: 6.1134458, y: 0.32127827, z: 0}
+    - {x: 5.363446, y: 0.32049784, z: 0}
+  - fromLane:
+      laneId: 21201
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 1
+      start: {x: 10.829966, y: 0.3261866, z: 0}
+      end: {x: 6.8634453, y: 0.32205874, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    toLane:
+      laneId: 21301
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 1
+      start: {x: 6.4173093, y: 0.7698482, z: 0}
+      end: {x: 6.4354734, y: 4.6026073, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    connectionKind: 0
+    isManual: 0
+    junctionNode: {fileID: 0}
+    junctionPoint: {x: 6.113758, y: 0.021278381, z: 0}
+    turnScore: -90.33116
+    movementType: 2
+    fromDistanceOnLane: 0
+    toDistanceOnLane: 0
+    curvePoints:
+    - {x: 6.8634453, y: 0.32205874, z: 0}
+    - {x: 6.6180706, y: 0.32205874, z: 0}
+    - {x: 6.530238, y: 0.33460632, z: 0}
+    - {x: 6.4674997, y: 0.37224904, z: 0}
+    - {x: 6.429857, y: 0.43498692, z: 0}
+    - {x: 6.4173093, y: 0.52281994, z: 0}
+    - {x: 6.4173093, y: 0.7698482, z: 0}
+  - fromLane:
+      laneId: 21201
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 1
+      start: {x: 10.829966, y: 0.3261866, z: 0}
+      end: {x: 6.8634453, y: 0.32205874, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    toLane:
+      laneId: 21400
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 0
+      start: {x: 5.810207, y: -0.7272914, z: 0}
+      end: {x: 5.7925315, y: -4.4569707, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    connectionKind: 0
+    isManual: 0
+    junctionNode: {fileID: 0}
+    junctionPoint: {x: 6.113758, y: 0.021278381, z: 0}
+    turnScore: 89.66884
+    movementType: 1
+    fromDistanceOnLane: 0
+    toDistanceOnLane: 0
+    curvePoints:
+    - {x: 6.8634453, y: 0.32205874, z: 0}
+    - {x: 6.2602067, y: 0.32205874, z: 0}
+    - {x: 6.0633316, y: 0.29393375, z: 0}
+    - {x: 5.922707, y: 0.20955873, z: 0}
+    - {x: 5.838332, y: 0.06893373, z: 0}
+    - {x: 5.810207, y: -0.12794128, z: 0}
+    - {x: 5.810207, y: -0.7272914, z: 0}
+  - fromLane:
+      laneId: 21300
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 0
+      start: {x: 5.8354797, y: 4.605451, z: 0}
+      end: {x: 5.8173156, y: 0.7726917, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    toLane:
+      laneId: 21400
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 0
+      start: {x: 5.810207, y: -0.7272914, z: 0}
+      end: {x: 5.7925315, y: -4.4569707, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    connectionKind: 0
+    isManual: 0
+    junctionNode: {fileID: 0}
+    junctionPoint: {x: 6.113758, y: 0.021278381, z: 0}
+    turnScore: 0
+    movementType: 0
+    fromDistanceOnLane: 0
+    toDistanceOnLane: 0
+    curvePoints:
+    - {x: 5.8173156, y: 0.7726917, z: 0}
+    - {x: 5.813761, y: 0.02270016, z: 0}
+    - {x: 5.810207, y: -0.7272914, z: 0}
+  - fromLane:
+      laneId: 21300
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 0
+      start: {x: 5.8354797, y: 4.605451, z: 0}
+      end: {x: 5.8173156, y: 0.7726917, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    toLane:
+      laneId: 21101
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 1
+      start: {x: 5.363446, y: 0.32049784, z: 0}
+      end: {x: -3.3382635, y: 0.3114433, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    connectionKind: 0
+    isManual: 0
+    junctionNode: {fileID: 0}
+    junctionPoint: {x: 6.113758, y: 0.021278381, z: 0}
+    turnScore: -89.668846
+    movementType: 2
+    fromDistanceOnLane: 0
+    toDistanceOnLane: 0
+    curvePoints:
+    - {x: 5.8173156, y: 0.7726917, z: 0}
+    - {x: 5.8173156, y: 0.5239851, z: 0}
+    - {x: 5.804598, y: 0.4349594, z: 0}
+    - {x: 5.7664437, y: 0.37136966, z: 0}
+    - {x: 5.7028537, y: 0.33321577, z: 0}
+    - {x: 5.613828, y: 0.32049784, z: 0}
+    - {x: 5.363446, y: 0.32049784, z: 0}
+  - fromLane:
+      laneId: 21300
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 0
+      start: {x: 5.8354797, y: 4.605451, z: 0}
+      end: {x: 5.8173156, y: 0.7726917, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    toLane:
+      laneId: 21200
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 0
+      start: {x: 6.86407, y: -0.277941, z: 0}
+      end: {x: 10.830589, y: -0.27381313, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    connectionKind: 0
+    isManual: 0
+    junctionNode: {fileID: 0}
+    junctionPoint: {x: 6.113758, y: 0.021278381, z: 0}
+    turnScore: 90.33116
+    movementType: 1
+    fromDistanceOnLane: 0
+    toDistanceOnLane: 0
+    curvePoints:
+    - {x: 5.8173156, y: 0.7726917, z: 0}
+    - {x: 5.8173156, y: 0.17205903, z: 0}
+    - {x: 5.845441, y: -0.024815977, z: 0}
+    - {x: 5.9298153, y: -0.16544098, z: 0}
+    - {x: 6.0704403, y: -0.24981599, z: 0}
+    - {x: 6.2673154, y: -0.277941, z: 0}
+    - {x: 6.86407, y: -0.277941, z: 0}
+  - fromLane:
+      laneId: 21401
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 1
+      start: {x: 6.392525, y: -4.4598145, z: 0}
+      end: {x: 6.4102006, y: -0.7301349, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    toLane:
+      laneId: 21301
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 1
+      start: {x: 6.4173093, y: 0.7698482, z: 0}
+      end: {x: 6.4354734, y: 4.6026073, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    connectionKind: 0
+    isManual: 0
+    junctionNode: {fileID: 0}
+    junctionPoint: {x: 6.113758, y: 0.021278381, z: 0}
+    turnScore: -0
+    movementType: 0
+    fromDistanceOnLane: 0
+    toDistanceOnLane: 0
+    curvePoints:
+    - {x: 6.4102006, y: -0.7301349, z: 0}
+    - {x: 6.413755, y: 0.019856662, z: 0}
+    - {x: 6.4173093, y: 0.7698482, z: 0}
+  - fromLane:
+      laneId: 21401
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 1
+      start: {x: 6.392525, y: -4.4598145, z: 0}
+      end: {x: 6.4102006, y: -0.7301349, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    toLane:
+      laneId: 21200
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 0
+      start: {x: 6.86407, y: -0.277941, z: 0}
+      end: {x: 10.830589, y: -0.27381313, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    connectionKind: 0
+    isManual: 0
+    junctionNode: {fileID: 0}
+    junctionPoint: {x: 6.113758, y: 0.021278381, z: 0}
+    turnScore: -89.66884
+    movementType: 2
+    fromDistanceOnLane: 0
+    toDistanceOnLane: 0
+    curvePoints:
+    - {x: 6.4102006, y: -0.7301349, z: 0}
+    - {x: 6.4102006, y: -0.48142827, z: 0}
+    - {x: 6.422919, y: -0.3924026, z: 0}
+    - {x: 6.4610724, y: -0.3288128, z: 0}
+    - {x: 6.5246625, y: -0.29065895, z: 0}
+    - {x: 6.613688, y: -0.277941, z: 0}
+    - {x: 6.86407, y: -0.277941, z: 0}
+  - fromLane:
+      laneId: 21401
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 1
+      start: {x: 6.392525, y: -4.4598145, z: 0}
+      end: {x: 6.4102006, y: -0.7301349, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    toLane:
+      laneId: 21101
+      ownerSegment: {fileID: 0}
+      localLaneIndex: 0
+      direction: 1
+      start: {x: 5.363446, y: 0.32049784, z: 0}
+      end: {x: -3.3382635, y: 0.3114433, z: 0}
+      fromNode: {fileID: 0}
+      toNode: {fileID: 0}
+    connectionKind: 0
+    isManual: 0
+    junctionNode: {fileID: 0}
+    junctionPoint: {x: 6.113758, y: 0.021278381, z: 0}
+    turnScore: 90.331154
+    movementType: 1
+    fromDistanceOnLane: 0
+    toDistanceOnLane: 0
+    curvePoints:
+    - {x: 6.4102006, y: -0.7301349, z: 0}
+    - {x: 6.4102006, y: -0.12950218, z: 0}
+    - {x: 6.382076, y: 0.06737283, z: 0}
+    - {x: 6.297701, y: 0.20799783, z: 0}
+    - {x: 6.157076, y: 0.29237282, z: 0}
+    - {x: 5.960201, y: 0.32049784, z: 0}
+    - {x: 5.363446, y: 0.32049784, z: 0}
+  manualLaneConnectionProfiles: []
   straightAngleThreshold: 30
   maxTurnAngle: 140
   intersectionSnapDistance: 0.05
   intersectionEpsilon: 0.001
-  nextNodeId: 200
-  nextSegmentId: 174
+  mergeStraightAngleThreshold: 10
+  nextNodeId: 237
+  nextSegmentId: 215
 --- !u!4 &160746228
 Transform:
   m_ObjectHideFlags: 0
@@ -175,8 +1152,169 @@ Transform:
   m_LocalPosition: {x: 2.4884152, y: 0.275633, z: 0.059108023}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 800559762}
+  - {fileID: 1314350185}
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &288254890
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 288254892}
+  - component: {fileID: 288254891}
+  m_Layer: 0
+  m_Name: RoadVehicleSpawnerV2 (1)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &288254891
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 288254890}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 547f16992f1ff00498401a2331ef9a63, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  network: {fileID: 160746227}
+  vehiclePrefab: {fileID: 2312824649979254897, guid: 3d9108d990934cd4c95718ef3a1e646c, type: 3}
+  useNearestNodeFromTransform: 1
+  startNode: {fileID: 0}
+  targetNode: {fileID: 0}
+  startNodeSearchRadius: 1.25
+  spawnOnPlay: 0
+  autoSpawn: 0
+  spawnInterval: 3
+  maxAliveVehicles: 0
+  spawnFromRightmostLane: 1
+  enableDebugKeyboard: 1
+  spawnKey: 32
+  swapDirectionKey: 114
+  logPathResult: 1
+  drawGizmos: 1
+  gizmoRadius: 0.18
+  spawnerColor: {r: 0.2, g: 1, b: 1, a: 0.9}
+  startLinkColor: {r: 0.3, g: 1, b: 0.3, a: 0.9}
+  targetLinkColor: {r: 1, g: 0.9, b: 0.2, a: 0.9}
+--- !u!4 &288254892
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 288254890}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -11.63, y: 0.022600781, z: 0.04952459}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &626116114
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 626116116}
+  - component: {fileID: 626116115}
+  m_Layer: 0
+  m_Name: RoadVehicleSpawnerV2 (4)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &626116115
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 626116114}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 547f16992f1ff00498401a2331ef9a63, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  network: {fileID: 160746227}
+  vehiclePrefab: {fileID: 2312824649979254897, guid: 3d9108d990934cd4c95718ef3a1e646c, type: 3}
+  useNearestNodeFromTransform: 1
+  startNode: {fileID: 0}
+  targetNode: {fileID: 0}
+  startNodeSearchRadius: 1.25
+  spawnOnPlay: 0
+  autoSpawn: 0
+  spawnInterval: 3
+  maxAliveVehicles: 0
+  spawnFromRightmostLane: 1
+  enableDebugKeyboard: 1
+  spawnKey: 32
+  swapDirectionKey: 114
+  logPathResult: 1
+  drawGizmos: 1
+  gizmoRadius: 0.18
+  spawnerColor: {r: 0.2, g: 1, b: 1, a: 0.9}
+  startLinkColor: {r: 0.3, g: 1, b: 0.3, a: 0.9}
+  targetLinkColor: {r: 1, g: 0.9, b: 0.2, a: 0.9}
+--- !u!4 &626116116
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 626116114}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 12.03, y: 0.022600781, z: 0.04952459}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &800559761
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 800559762}
+  m_Layer: 0
+  m_Name: Nodes
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &800559762
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 800559761}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 160746228}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1174334050
 GameObject:
@@ -218,7 +1356,7 @@ MonoBehaviour:
   spawnInterval: 3
   maxAliveVehicles: 0
   spawnFromRightmostLane: 1
-  enableDebugKeyboard: 0
+  enableDebugKeyboard: 1
   spawnKey: 32
   swapDirectionKey: 114
   logPathResult: 1
@@ -236,7 +1374,7 @@ Transform:
   m_GameObject: {fileID: 1174334050}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -0.1797359, y: 0.022600781, z: 0.04952459}
+  m_LocalPosition: {x: -11.63, y: 0.022600781, z: 0.04952459}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -274,18 +1412,28 @@ MonoBehaviour:
   network: {fileID: 160746227}
   toolEnabled: 1
   continueChain: 1
-  toolMode: 0
-  forwardLanes: 2
-  backwardLanes: 2
+  toolMode: 2
+  forwardLanes: 1
+  backwardLanes: 1
   laneWidth: 0.6
   speedLimit: 3
   snapDistance: 0.4
+  snapToExistingSegments: 1
+  segmentSnapDistance: 0.35
+  minDistanceFromCurrentStartForSegmentSnap: 0.12
   deletePickDistance: 0.25
   junctionPickDistance: 0.45
+  approachPickDistance: 0.75
+  lanePickDistance: 0.45
   previewColor: {r: 0, g: 1, b: 1, a: 1}
   deletePreviewColor: {r: 1, g: 0, b: 0, a: 1}
   junctionPreviewColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  turnEditPreviewColor: {r: 1, g: 0.4, b: 1, a: 1}
   currentStartNode: {fileID: 0}
+  selectedTurnNode: {fileID: 0}
+  selectedIncomingSegment: {fileID: 0}
+  selectedFromLaneId: 0
+  selectedToLaneId: 0
 --- !u!4 &1220206824
 Transform:
   m_ObjectHideFlags: 0
@@ -300,6 +1448,37 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1314350184
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1314350185}
+  m_Layer: 0
+  m_Name: Segments
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1314350185
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1314350184}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 160746228}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1529461745
 GameObject:
@@ -444,12 +1623,145 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1569998391
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1569998393}
+  - component: {fileID: 1569998392}
+  m_Layer: 0
+  m_Name: RoadVehicleSpawnerV2 (3)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1569998392
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1569998391}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 547f16992f1ff00498401a2331ef9a63, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  network: {fileID: 160746227}
+  vehiclePrefab: {fileID: 2312824649979254897, guid: 3d9108d990934cd4c95718ef3a1e646c, type: 3}
+  useNearestNodeFromTransform: 1
+  startNode: {fileID: 0}
+  targetNode: {fileID: 0}
+  startNodeSearchRadius: 1.25
+  spawnOnPlay: 0
+  autoSpawn: 0
+  spawnInterval: 3
+  maxAliveVehicles: 0
+  spawnFromRightmostLane: 1
+  enableDebugKeyboard: 1
+  spawnKey: 32
+  swapDirectionKey: 114
+  logPathResult: 1
+  drawGizmos: 1
+  gizmoRadius: 0.18
+  spawnerColor: {r: 0.2, g: 1, b: 1, a: 0.9}
+  startLinkColor: {r: 0.3, g: 1, b: 0.3, a: 0.9}
+  targetLinkColor: {r: 1, g: 0.9, b: 0.2, a: 0.9}
+--- !u!4 &1569998393
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1569998391}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 11.94, y: 0.022600781, z: 0.04952459}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1875378745
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1875378747}
+  - component: {fileID: 1875378746}
+  m_Layer: 0
+  m_Name: RoadVehicleSpawnerV2 (2)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1875378746
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1875378745}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 547f16992f1ff00498401a2331ef9a63, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  network: {fileID: 160746227}
+  vehiclePrefab: {fileID: 2312824649979254897, guid: 3d9108d990934cd4c95718ef3a1e646c, type: 3}
+  useNearestNodeFromTransform: 1
+  startNode: {fileID: 0}
+  targetNode: {fileID: 0}
+  startNodeSearchRadius: 1.25
+  spawnOnPlay: 0
+  autoSpawn: 0
+  spawnInterval: 3
+  maxAliveVehicles: 0
+  spawnFromRightmostLane: 1
+  enableDebugKeyboard: 1
+  spawnKey: 32
+  swapDirectionKey: 114
+  logPathResult: 1
+  drawGizmos: 1
+  gizmoRadius: 0.18
+  spawnerColor: {r: 0.2, g: 1, b: 1, a: 0.9}
+  startLinkColor: {r: 0.3, g: 1, b: 0.3, a: 0.9}
+  targetLinkColor: {r: 1, g: 0.9, b: 0.2, a: 0.9}
+--- !u!4 &1875378747
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1875378745}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -11.63, y: 0.022600781, z: 0.04952459}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
   - {fileID: 1529461748}
   - {fileID: 160746228}
-  - {fileID: 1220206824}
   - {fileID: 1565199992}
   - {fileID: 1174334052}
+  - {fileID: 288254892}
+  - {fileID: 1875378747}
+  - {fileID: 111784034}
+  - {fileID: 626116116}
+  - {fileID: 1569998393}
+  - {fileID: 1220206824}
