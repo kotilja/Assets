@@ -1217,20 +1217,14 @@ private void SplitExistingSegment(RoadSegmentV2 segment, RoadNodeV2 splitNode)
         segmentObject.transform.position = Vector3.zero;
 
         RoadSegmentV2 segment = segmentObject.AddComponent<RoadSegmentV2>();
-        segment.Initialize(
-            nextSegmentId++,
-            startNode,
-            endNode,
-            forwardLanes,
-            backwardLanes,
-            laneWidth,
-            speedLimit
-        );
+        if (!segments.Contains(segment))
+            segments.Add(segment);
 
-        segments.Add(segment);
+        startNode.RegisterSegment(segment);
+        endNode.RegisterSegment(segment);
 
 #if UNITY_EDITOR
-        Undo.RegisterCreatedObjectUndo(segmentObject, "Create Road Segment");
+    Undo.RegisterCreatedObjectUndo(segmentObject, "Create Road Segment");
 #endif
 
         return segment;
@@ -1380,9 +1374,16 @@ private void DeleteNodeIfOrphaned(RoadNodeV2 node)
         Destroy(node.gameObject);
 #endif
 
-        CreateSegmentRaw(firstOther, secondOther, forwardLanes, backwardLanes, laneWidth, speedLimit);
-        return true;
-    }
+        RoadSegmentV2 merged = CreateSegmentRaw(
+            firstOther,
+            secondOther,
+            forwardLanes,
+            backwardLanes,
+            laneWidth,
+            speedLimit
+        );
+
+        return merged != null;
 
     private RoadNodeV2 GetOtherNode(RoadSegmentV2 segment, RoadNodeV2 node)
     {
@@ -1580,7 +1581,13 @@ private void DeleteNodeIfOrphaned(RoadNodeV2 node)
     private void CleanupNulls()
     {
         nodes.RemoveAll(n => n == null);
-        segments.RemoveAll(s => s == null);
+
+        segments.RemoveAll(s =>
+            s == null ||
+            s.StartNode == null ||
+            s.EndNode == null
+        );
+
         allLanes.RemoveAll(l => l == null);
         allConnections.RemoveAll(c => c == null);
     }
