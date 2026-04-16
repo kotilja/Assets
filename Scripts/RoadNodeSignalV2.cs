@@ -474,19 +474,6 @@ public class RoadNodeSignalV2 : MonoBehaviour
         return false;
     }
 
-    private Vector3 GetIncomingDirection(RoadSegmentV2 segment)
-    {
-        if (segment == null || node == null)
-            return Vector3.right;
-
-        if (segment.EndNode == node && segment.StartNode != null)
-            return (node.transform.position - segment.StartNode.transform.position).normalized;
-
-        if (segment.StartNode == node && segment.EndNode != null)
-            return (node.transform.position - segment.EndNode.transform.position).normalized;
-
-        return Vector3.right;
-    }
 
     private Vector3 GetIncomingStopCenter(RoadSegmentV2 segment)
     {
