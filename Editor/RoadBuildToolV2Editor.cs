@@ -78,14 +78,16 @@ public class RoadBuildToolV2Editor : Editor
             SceneView.RepaintAll();
         }
 
+        EditorGUILayout.EndHorizontal();
+
+        EditorGUILayout.BeginHorizontal();
+
         if (GUILayout.Button("Манёвры"))
         {
             Tool.SetToolMode(RoadBuildToolV2.ToolMode.JunctionTurns);
             EditorUtility.SetDirty(Tool);
             SceneView.RepaintAll();
         }
-
-        EditorGUILayout.EndHorizontal();
 
         if (GUILayout.Button("Связи полос"))
         {
@@ -94,7 +96,7 @@ public class RoadBuildToolV2Editor : Editor
             SceneView.RepaintAll();
         }
 
-
+        EditorGUILayout.EndHorizontal();
     }
 
     private void DrawTurnEditorPanel()
