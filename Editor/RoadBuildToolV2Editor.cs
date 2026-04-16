@@ -19,6 +19,9 @@ public class RoadBuildToolV2Editor : Editor
         if (Tool.CurrentToolMode == RoadBuildToolV2.ToolMode.JunctionTurns)
             DrawTurnEditorPanel();
 
+        if (Tool.CurrentToolMode == RoadBuildToolV2.ToolMode.JunctionSignals)
+            DrawSignalEditorPanel();
+
         if (Tool.CurrentToolMode == RoadBuildToolV2.ToolMode.LaneConnections)
             DrawLaneConnectionsPanel();
 
@@ -57,6 +60,13 @@ public class RoadBuildToolV2Editor : Editor
             SceneView.RepaintAll();
         }
 
+        if (GUILayout.Button("Кривая"))
+        {
+            Tool.SetToolMode(RoadBuildToolV2.ToolMode.DrawCurveRoad);
+            EditorUtility.SetDirty(Tool);
+            SceneView.RepaintAll();
+        }
+
         if (GUILayout.Button("Удаление"))
         {
             Tool.SetToolMode(RoadBuildToolV2.ToolMode.DeleteRoad);
@@ -81,7 +91,12 @@ public class RoadBuildToolV2Editor : Editor
         EditorGUILayout.EndHorizontal();
 
         EditorGUILayout.BeginHorizontal();
-
+        if (GUILayout.Button("Фазы"))
+        {
+            Tool.SetToolMode(RoadBuildToolV2.ToolMode.JunctionSignals);
+            EditorUtility.SetDirty(Tool);
+            SceneView.RepaintAll();
+        }
         if (GUILayout.Button("Манёвры"))
         {
             Tool.SetToolMode(RoadBuildToolV2.ToolMode.JunctionTurns);
@@ -126,6 +141,83 @@ public class RoadBuildToolV2Editor : Editor
         DrawMovementToggleButton("→ Направо", RoadLaneConnectionV2.MovementType.Right);
 
         EditorGUILayout.EndHorizontal();
+    }
+
+    private void DrawSignalEditorPanel()
+    {
+        EditorGUILayout.Space(8f);
+        EditorGUILayout.LabelField("Редактор фаз светофора", EditorStyles.boldLabel);
+
+        if (Tool.SelectedSignalNode == null || Tool.SelectedSignal == null)
+        {
+            EditorGUILayout.HelpBox("Кликни по светофорному перекрестку в Scene View.", MessageType.Info);
+            return;
+        }
+
+        EditorGUILayout.ObjectField("Узел", Tool.SelectedSignalNode, typeof(RoadNodeV2), true);
+
+        EditorGUILayout.LabelField("Текущая фаза", Tool.SelectedSignal.GetCurrentPhaseLabel());
+        EditorGUILayout.LabelField("Количество фаз", Tool.SelectedSignal.GetPhaseCount().ToString());
+
+        EditorGUILayout.BeginHorizontal();
+
+        if (GUILayout.Button("◀ Пред. фаза"))
+        {
+            Tool.SelectPreviousSignalPhase();
+            EditorUtility.SetDirty(Tool);
+            SceneView.RepaintAll();
+        }
+
+        if (GUILayout.Button("След. фаза ▶"))
+        {
+            Tool.SelectNextSignalPhase();
+            EditorUtility.SetDirty(Tool);
+            SceneView.RepaintAll();
+        }
+
+        EditorGUILayout.EndHorizontal();
+
+        EditorGUILayout.BeginHorizontal();
+
+        if (GUILayout.Button("+ Фаза"))
+        {
+            Tool.AddSignalPhase();
+            EditorUtility.SetDirty(Tool);
+            SceneView.RepaintAll();
+        }
+
+        if (GUILayout.Button("- Фаза"))
+        {
+            Tool.RemoveSignalPhase();
+            EditorUtility.SetDirty(Tool);
+            SceneView.RepaintAll();
+        }
+
+        EditorGUILayout.EndHorizontal();
+
+        EditorGUILayout.Space(6f);
+        EditorGUILayout.ObjectField("Входящий сегмент", Tool.SelectedSignalIncomingSegment, typeof(RoadSegmentV2), true);
+
+        if (Tool.SelectedSignalIncomingSegment == null)
+        {
+            EditorGUILayout.HelpBox("Кликни ближе к нужному входящему сегменту перекрестка.", MessageType.Info);
+            return;
+        }
+
+        EditorGUILayout.BeginHorizontal();
+
+        DrawSignalMovementToggleButton("← Налево", RoadLaneConnectionV2.MovementType.Left);
+        DrawSignalMovementToggleButton("↑ Прямо", RoadLaneConnectionV2.MovementType.Straight);
+        DrawSignalMovementToggleButton("→ Направо", RoadLaneConnectionV2.MovementType.Right);
+
+        EditorGUILayout.EndHorizontal();
+
+        if (GUILayout.Button("Сбросить выбор сигнала"))
+        {
+            Tool.ClearSignalSelection();
+            EditorUtility.SetDirty(Tool);
+            SceneView.RepaintAll();
+        }
     }
 
     private void DrawLaneConnectionsPanel()
@@ -203,6 +295,22 @@ public class RoadBuildToolV2Editor : Editor
         GUI.backgroundColor = oldColor;
     }
 
+    private void DrawSignalMovementToggleButton(string label, RoadLaneConnectionV2.MovementType movementType)
+    {
+        bool allowed = Tool.GetSelectedSignalMovementAllowed(movementType);
+        Color oldColor = GUI.backgroundColor;
+        GUI.backgroundColor = allowed ? new Color(0.4f, 0.9f, 0.4f) : new Color(0.9f, 0.4f, 0.4f);
+
+        if (GUILayout.Button(label, GUILayout.Height(28f)))
+        {
+            Tool.ToggleSelectedSignalMovement(movementType);
+            EditorUtility.SetDirty(Tool);
+            SceneView.RepaintAll();
+        }
+
+        GUI.backgroundColor = oldColor;
+    }
+
     private string GetHelpText()
     {
         switch (Tool.CurrentToolMode)
@@ -210,18 +318,27 @@ public class RoadBuildToolV2Editor : Editor
             case RoadBuildToolV2.ToolMode.DrawRoad:
                 return "Режим рисования: ЛКМ ставит узел или создает сегмент. Esc завершает текущую цепочку.";
 
+            case RoadBuildToolV2.ToolMode.DrawCurveRoad:
+                return "Режим кривой: ЛКМ точка A, ЛКМ точка B, ЛКМ точка C — дорога изгибается к C и строится.";
+
             case RoadBuildToolV2.ToolMode.DeleteRoad:
                 return "Режим удаления: ЛКМ удаляет ближайший сегмент дороги.";
 
             case RoadBuildToolV2.ToolMode.JunctionControl:
                 return "Режим перекрестков: ЛКМ по существующему перекрестку переключает режим RightHandRule / TrafficLight.";
 
-            case RoadBuildToolV2.ToolMode.JunctionTurns:
-                return "Режим манёвров: ЛКМ по перекрестку и ближе к нужному подъезду выбирает входящий сегмент. В инспекторе включаются и выключаются ← ↑ →.";
-            case RoadBuildToolV2.ToolMode.LaneConnections:
-                return "Режим ручных связей полос: сначала ЛКМ по входящей полосе перед перекрестком, потом ЛКМ по выходящей полосе после перекрестка. Повторный клик по той же выходящей полосе снимает связь.";
             case RoadBuildToolV2.ToolMode.JunctionKeepClear:
                 return "Режим keep-clear: ЛКМ по перекрестку включает или выключает вафельную разметку и правило 'не занимать перекресток'.";
+
+            case RoadBuildToolV2.ToolMode.JunctionSignals:
+                return "Режим фаз: ЛКМ по светофорному перекрестку выбирает его, ЛКМ ближе к входящему сегменту выбирает подход. В инспекторе переключаются фазы и настраиваются ← ↑ → для выбранного входа.";
+
+            case RoadBuildToolV2.ToolMode.JunctionTurns:
+                return "Режим манёвров: ЛКМ по перекрестку и ближе к нужному подъезду выбирает входящий сегмент. В инспекторе включаются и выключаются ← ↑ →.";
+
+            case RoadBuildToolV2.ToolMode.LaneConnections:
+                return "Режим ручных связей полос: сначала ЛКМ по входящей полосе перед перекрестком, потом ЛКМ по выходящей полосе после перекрестка. Повторный клик по той же выходящей полосе снимает связь.";
+
             default:
                 return "-";
         }
@@ -244,6 +361,7 @@ public class RoadBuildToolV2Editor : Editor
         DrawPreview(worldPosition);
         DrawDrawAssistOverlay(rawWorldPosition, worldPosition);
         DrawTurnSelectionOverlay();
+        DrawSignalSelectionOverlay();
         DrawLaneConnectionOverlay();
 
         if (e.type == EventType.MouseDown && e.button == 0 && !e.alt)
@@ -283,6 +401,31 @@ public class RoadBuildToolV2Editor : Editor
                 }
                 break;
 
+            case RoadBuildToolV2.ToolMode.DrawCurveRoad:
+                Handles.color = Tool.PreviewColor;
+                Handles.DrawSolidDisc(worldPosition, Vector3.forward, 0.06f);
+
+                if (Tool.HasCurrentStartNode && !Tool.HasCurveControlPoint)
+                {
+                    Handles.DrawDottedLine(Tool.CurrentStartPosition, worldPosition, 4f);
+                    Handles.DrawWireDisc(Tool.CurrentStartPosition, Vector3.forward, Tool.SnapDistance);
+                }
+                else if (Tool.HasCurrentStartNode && Tool.HasCurveControlPoint)
+                {
+                    DrawQuadraticPreview(
+                        Tool.CurrentStartPosition,
+                        Tool.CurrentCurveControlPoint,
+                        worldPosition
+                    );
+
+                    Handles.color = new Color(1f, 0.85f, 0.2f, 1f);
+                    Handles.DrawWireDisc(Tool.CurrentStartPosition, Vector3.forward, Tool.SnapDistance);
+                    Handles.DrawSolidDisc(Tool.CurrentCurveControlPoint, Vector3.forward, 0.05f);
+                    Handles.DrawDottedLine(Tool.CurrentStartPosition, Tool.CurrentCurveControlPoint, 3f);
+                    Handles.DrawDottedLine(Tool.CurrentCurveControlPoint, worldPosition, 3f);
+                }
+                break;
+
             case RoadBuildToolV2.ToolMode.DeleteRoad:
                 Handles.color = Tool.DeletePreviewColor;
                 Handles.DrawSolidDisc(worldPosition, Vector3.forward, 0.06f);
@@ -305,7 +448,14 @@ public class RoadBuildToolV2Editor : Editor
                 Handles.color = Tool.TurnEditPreviewColor;
                 Handles.DrawSolidDisc(worldPosition, Vector3.forward, 0.06f);
                 Handles.DrawWireDisc(worldPosition, Vector3.forward, Tool.LanePickDistance);
-                 break;
+                break;
+
+            case RoadBuildToolV2.ToolMode.JunctionSignals:
+                Handles.color = Tool.JunctionPreviewColor;
+                Handles.DrawSolidDisc(worldPosition, Vector3.forward, 0.06f);
+                Handles.DrawWireDisc(worldPosition, Vector3.forward, Tool.JunctionPickDistance);
+                break;
+
             case RoadBuildToolV2.ToolMode.JunctionKeepClear:
                 Handles.color = Tool.JunctionPreviewColor;
                 Handles.DrawSolidDisc(worldPosition, Vector3.forward, 0.06f);
@@ -316,10 +466,14 @@ public class RoadBuildToolV2Editor : Editor
 
     private void DrawDrawAssistOverlay(Vector3 rawWorldPosition, Vector3 snappedWorldPosition)
     {
-        if (Tool.CurrentToolMode != RoadBuildToolV2.ToolMode.DrawRoad)
+        if (Tool.CurrentToolMode != RoadBuildToolV2.ToolMode.DrawRoad &&
+            Tool.CurrentToolMode != RoadBuildToolV2.ToolMode.DrawCurveRoad)
             return;
 
         if (!Tool.HasCurrentStartNode)
+            return;
+
+        if (Tool.CurrentToolMode == RoadBuildToolV2.ToolMode.DrawCurveRoad && !Tool.HasCurveControlPoint)
             return;
 
         if (Vector3.Distance(rawWorldPosition, snappedWorldPosition) < 0.001f)
@@ -371,6 +525,48 @@ public class RoadBuildToolV2Editor : Editor
         }
     }
 
+    private void DrawSignalSelectionOverlay()
+    {
+        if (Tool.CurrentToolMode != RoadBuildToolV2.ToolMode.JunctionSignals)
+            return;
+
+        if (Tool.SelectedSignalNode != null)
+        {
+            Handles.color = new Color(0.2f, 1f, 1f, 1f);
+            Handles.DrawWireDisc(Tool.SelectedSignalNode.transform.position, Vector3.forward, 0.42f);
+        }
+
+        if (Tool.SelectedSignalIncomingSegment != null && Tool.SelectedSignalNode != null)
+        {
+            Vector3 nodePos = Tool.SelectedSignalNode.transform.position;
+            Vector3 otherPos = nodePos;
+
+            if (Tool.SelectedSignalIncomingSegment.EndNode == Tool.SelectedSignalNode && Tool.SelectedSignalIncomingSegment.StartNode != null)
+                otherPos = Tool.SelectedSignalIncomingSegment.StartNode.transform.position;
+            else if (Tool.SelectedSignalIncomingSegment.StartNode == Tool.SelectedSignalNode && Tool.SelectedSignalIncomingSegment.EndNode != null)
+                otherPos = Tool.SelectedSignalIncomingSegment.EndNode.transform.position;
+
+            Vector3 dir = (nodePos - otherPos).normalized;
+            Vector3 probe = nodePos - dir * 0.55f;
+
+            Handles.color = new Color(0.2f, 1f, 1f, 1f);
+            Handles.DrawLine(otherPos, nodePos);
+            Handles.DrawSolidDisc(probe, Vector3.forward, 0.08f);
+
+            GUIStyle style = new GUIStyle(EditorStyles.boldLabel);
+            style.normal.textColor = Color.white;
+
+            string phaseLabel = Tool.SelectedSignal != null ? Tool.SelectedSignal.GetCurrentPhaseLabel() : "-";
+
+            Handles.Label(
+                probe + new Vector3(0.08f, 0.08f, 0f),
+                $"{phaseLabel}   ← {(Tool.GetSelectedSignalMovementAllowed(RoadLaneConnectionV2.MovementType.Left) ? "ON" : "OFF")}  " +
+                $"↑ {(Tool.GetSelectedSignalMovementAllowed(RoadLaneConnectionV2.MovementType.Straight) ? "ON" : "OFF")}  " +
+                $"→ {(Tool.GetSelectedSignalMovementAllowed(RoadLaneConnectionV2.MovementType.Right) ? "ON" : "OFF")}",
+                style
+            );
+        }
+    }
 
     private void DrawLaneConnectionOverlay()
     {
@@ -472,6 +668,24 @@ public class RoadBuildToolV2Editor : Editor
         string toName = lane.toNode != null ? lane.toNode.name : "null";
 
         return $"LaneId={lane.laneId}, {segmentName}, {fromName} -> {toName}, idx={lane.localLaneIndex}";
+    }
+
+    private void DrawQuadraticPreview(Vector3 a, Vector3 control, Vector3 b)
+    {
+        const int samples = 24;
+        Vector3 prev = a;
+
+        Handles.color = new Color(0.2f, 1f, 1f, 1f);
+
+        for (int i = 1; i <= samples; i++)
+        {
+            float t = i / (float)samples;
+            float u = 1f - t;
+            Vector3 p = u * u * a + 2f * u * t * control + t * t * b;
+
+            Handles.DrawLine(prev, p);
+            prev = p;
+        }
     }
 
     private Vector3 GetWorldPointOnPlane(Vector2 mousePosition)

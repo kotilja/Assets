@@ -15,8 +15,10 @@ public class RoadLaneDataV2
     public RoadNodeV2 fromNode;
     public RoadNodeV2 toNode;
 
+    public readonly List<Vector3> sampledPoints = new List<Vector3>();
     public readonly List<RoadLaneConnectionV2> outgoingConnections = new List<RoadLaneConnectionV2>();
     public readonly List<RoadLaneConnectionV2> incomingConnections = new List<RoadLaneConnectionV2>();
+    
 
     public Vector3 DirectionVector
     {

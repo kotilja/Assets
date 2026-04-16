@@ -15,6 +15,9 @@ public class RoadSegmentV2 : MonoBehaviour
     [SerializeField] private float speedLimit = 3f;
     [SerializeField] private float junctionInset = 0.35f;
     [SerializeField] private float stopLineOffset = 0.18f;
+    [SerializeField] private bool isCurved = false;
+    [SerializeField] private Vector3 curveControlPoint = Vector3.zero;
+    [SerializeField] private int curveSampleCount = 16;
 
     [Header("Visuals")]
     [SerializeField] private Color roadColor = new Color(0.18f, 0.18f, 0.18f, 1f);
@@ -82,6 +85,9 @@ public class RoadSegmentV2 : MonoBehaviour
     public float TotalRoadWidth => TotalLaneCount * laneWidth;
     public float StopLineOffset => stopLineOffset;
 
+    public bool IsCurved => isCurved;
+    public Vector3 CurveControlPoint => curveControlPoint;
+
     public void Initialize(
         int newId,
         RoadNodeV2 newStartNode,
@@ -101,6 +107,20 @@ public class RoadSegmentV2 : MonoBehaviour
 
         gameObject.name = $"RoadSegment_{id}";
         RegisterToNodes();
+        RefreshVisual();
+    }
+
+    public void SetCurve(Vector3 controlPoint)
+    {
+        isCurved = true;
+        curveControlPoint = new Vector3(controlPoint.x, controlPoint.y, 0f);
+        RefreshVisual();
+    }
+
+    public void ClearCurve()
+    {
+        isCurved = false;
+        curveControlPoint = Vector3.zero;
         RefreshVisual();
     }
 
@@ -167,18 +187,20 @@ private void OnDestroy()
         EnsureRoadRenderer();
         EnsureLanesRoot();
 
-        Vector3 start = startNode.transform.position;
-        Vector3 end = endNode.transform.position;
+        List<Vector3> centerPolyline = BuildCenterPolyline();
+        if (centerPolyline.Count < 2)
+            return;
 
-        roadRenderer.positionCount = 2;
-        roadRenderer.SetPosition(0, start);
-        roadRenderer.SetPosition(1, end);
+        roadRenderer.positionCount = centerPolyline.Count;
         roadRenderer.startWidth = TotalRoadWidth;
         roadRenderer.endWidth = TotalRoadWidth;
         roadRenderer.startColor = roadColor;
         roadRenderer.endColor = roadColor;
 
-        RebuildLaneVisualsAndData(start, end);
+        for (int i = 0; i < centerPolyline.Count; i++)
+            roadRenderer.SetPosition(i, centerPolyline[i]);
+
+        RebuildLaneVisualsAndData(centerPolyline);
     }
 
     public void RefreshDirectionArrows()
@@ -265,19 +287,15 @@ private void OnDestroy()
     }
 
 
-    private void RebuildLaneVisualsAndData(Vector3 start, Vector3 end)
+    private void RebuildLaneVisualsAndData(List<Vector3> centerPolyline)
     {
         EnsureLaneObjectsCount(GetLaneMarkingCount());
         EnsureArrowObjectsCount(TotalLaneCount);
         EnsureLaneDataCount(TotalLaneCount);
 
-        Vector3 segmentVector = end - start;
-        float segmentLength = segmentVector.magnitude;
+        float segmentLength = GetPolylineLength(centerPolyline);
         if (segmentLength < 0.0001f)
             return;
-
-        Vector3 direction = segmentVector / segmentLength;
-        Vector3 normal = new Vector3(-direction.y, direction.x, 0f);
 
         float startCut = GetNodeCutDistance(startNode, segmentLength);
         float endCut = GetNodeCutDistance(endNode, segmentLength);
@@ -291,11 +309,10 @@ private void OnDestroy()
         for (int i = 0; i < forwardLanes; i++)
         {
             float offset = rightEdgeCenter + i * laneWidth;
-            Vector3 rawLaneStart = start + normal * offset;
-            Vector3 rawLaneEnd = end + normal * offset;
 
-            Vector3 laneStart = rawLaneStart + direction * startCut;
-            Vector3 laneEnd = rawLaneEnd - direction * endCut;
+            List<Vector3> lanePolyline = BuildTrimmedOffsetPolyline(centerPolyline, offset, startCut, endCut);
+            if (lanePolyline.Count < 2)
+                continue;
 
             if (arrowRenderers[laneCounter] != null)
                 arrowRenderers[laneCounter].enabled = false;
@@ -305,10 +322,12 @@ private void OnDestroy()
             lane.ownerSegment = this;
             lane.localLaneIndex = i;
             lane.direction = RoadLaneV2.LaneDirection.Forward;
-            lane.start = laneStart;
-            lane.end = laneEnd;
+            lane.start = lanePolyline[0];
+            lane.end = lanePolyline[lanePolyline.Count - 1];
             lane.fromNode = startNode;
             lane.toNode = endNode;
+            lane.sampledPoints.Clear();
+            lane.sampledPoints.AddRange(lanePolyline);
             lane.outgoingConnections.Clear();
             lane.incomingConnections.Clear();
 
@@ -318,11 +337,10 @@ private void OnDestroy()
         for (int i = 0; i < backwardLanes; i++)
         {
             float offset = leftEdgeCenter - i * laneWidth;
-            Vector3 rawStart = start + normal * offset;
-            Vector3 rawEnd = end + normal * offset;
 
-            Vector3 trimmedForwardStart = rawStart + direction * startCut;
-            Vector3 trimmedForwardEnd = rawEnd - direction * endCut;
+            List<Vector3> lanePolyline = BuildTrimmedOffsetPolyline(centerPolyline, offset, startCut, endCut);
+            if (lanePolyline.Count < 2)
+                continue;
 
             if (arrowRenderers[laneCounter] != null)
                 arrowRenderers[laneCounter].enabled = false;
@@ -332,37 +350,23 @@ private void OnDestroy()
             lane.ownerSegment = this;
             lane.localLaneIndex = i;
             lane.direction = RoadLaneV2.LaneDirection.Backward;
-            lane.start = trimmedForwardEnd;
-            lane.end = trimmedForwardStart;
+            lane.start = lanePolyline[lanePolyline.Count - 1];
+            lane.end = lanePolyline[0];
             lane.fromNode = endNode;
             lane.toNode = startNode;
+            lane.sampledPoints.Clear();
+
+            for (int j = lanePolyline.Count - 1; j >= 0; j--)
+                lane.sampledPoints.Add(lanePolyline[j]);
+
             lane.outgoingConnections.Clear();
             lane.incomingConnections.Clear();
 
             laneCounter++;
         }
 
-        UpdateLaneMarkings(
-            start,
-            end,
-            direction,
-            normal,
-            startCut,
-            endCut,
-            rightEdgeCenter,
-            leftEdgeCenter
-        );
-
-        UpdateStopLineVisuals(
-            start,
-            end,
-            direction,
-            normal,
-            startCut,
-            endCut,
-            rightEdgeCenter,
-            leftEdgeCenter
-        );
+        UpdateLaneMarkings(centerPolyline, startCut, endCut, rightEdgeCenter, leftEdgeCenter);
+        UpdateStopLineVisuals(centerPolyline, startCut, endCut);
     }
 
     private int GetLaneMarkingCount()
@@ -382,14 +386,11 @@ private void OnDestroy()
     }
 
     private void UpdateLaneMarkings(
-        Vector3 start,
-        Vector3 end,
-        Vector3 direction,
-        Vector3 normal,
-        float startCut,
-        float endCut,
-        float rightEdgeCenter,
-        float leftEdgeCenter)
+    List<Vector3> centerPolyline,
+    float startCut,
+    float endCut,
+    float rightEdgeCenter,
+    float leftEdgeCenter)
     {
         int markingIndex = 0;
 
@@ -400,14 +401,12 @@ private void OnDestroy()
         {
             float offset = rightEdgeCenter + (i + 0.5f) * laneWidth;
 
-            Vector3 a = start + normal * offset + direction * startCut;
-            Vector3 b = end + normal * offset - direction * endCut;
+            List<Vector3> markingPolyline = BuildTrimmedOffsetPolyline(centerPolyline, offset, startCut, endCut);
 
             RoadLaneV2 marking = laneVisuals[markingIndex];
             marking.Initialize(i, RoadLaneV2.LaneDirection.Forward);
-            marking.UpdateRestrictedDashedVisual(
-                a,
-                b,
+            marking.UpdateRestrictedDashedPolylineVisual(
+                markingPolyline,
                 laneMarkingWidth,
                 laneMarkingColor,
                 laneMarkingSortingOrder,
@@ -424,14 +423,12 @@ private void OnDestroy()
         {
             float centerOffset = -TotalRoadWidth * 0.5f + forwardLanes * laneWidth;
 
-            Vector3 a = start + normal * centerOffset + direction * startCut;
-            Vector3 b = end + normal * centerOffset - direction * endCut;
+            List<Vector3> centerPolylineMarking = BuildTrimmedOffsetPolyline(centerPolyline, centerOffset, startCut, endCut);
 
             RoadLaneV2 marking = laneVisuals[markingIndex];
             marking.Initialize(0, RoadLaneV2.LaneDirection.Forward);
-            marking.UpdateVisual(
-                a,
-                b,
+            marking.UpdatePolylineVisual(
+                centerPolylineMarking,
                 laneMarkingWidth,
                 centerSeparatorColor,
                 centerSeparatorSortingOrder
@@ -444,14 +441,12 @@ private void OnDestroy()
         {
             float offset = leftEdgeCenter - (i + 0.5f) * laneWidth;
 
-            Vector3 a = start + normal * offset + direction * startCut;
-            Vector3 b = end + normal * offset - direction * endCut;
+            List<Vector3> markingPolyline = BuildTrimmedOffsetPolyline(centerPolyline, offset, startCut, endCut);
 
             RoadLaneV2 marking = laneVisuals[markingIndex];
             marking.Initialize(i, RoadLaneV2.LaneDirection.Backward);
-            marking.UpdateRestrictedDashedVisual(
-                a,
-                b,
+            marking.UpdateRestrictedDashedPolylineVisual(
+                markingPolyline,
                 laneMarkingWidth,
                 laneMarkingColor,
                 laneMarkingSortingOrder,
@@ -472,57 +467,49 @@ private void OnDestroy()
     }
 
     private void UpdateStopLineVisuals(
-    Vector3 start,
-    Vector3 end,
-    Vector3 direction,
-    Vector3 normal,
+    List<Vector3> centerPolyline,
     float startCut,
-    float endCut,
-    float rightEdgeCenter,
-    float leftEdgeCenter)
+    float endCut)
     {
         EnsureStopLineRenderers();
 
         bool showForward = forwardLanes > 0 && endNode != null && endNode.ConnectedSegments.Count > 2;
         bool showBackward = backwardLanes > 0 && startNode != null && startNode.ConnectedSegments.Count > 2;
 
-        float forwardCenterOffset = rightEdgeCenter + (forwardLanes - 1) * laneWidth * 0.5f;
-        float backwardCenterOffset = leftEdgeCenter - (backwardLanes - 1) * laneWidth * 0.5f;
+        List<RoadLaneDataV2> forwardDriving = GetDrivingLanes(startNode, endNode);
+        List<RoadLaneDataV2> backwardDriving = GetDrivingLanes(endNode, startNode);
 
-        float forwardWidth = forwardLanes * laneWidth;
-        float backwardWidth = backwardLanes * laneWidth;
+        Vector3 endTangent = GetPolylineDirectionAtEnd(centerPolyline);
+        Vector3 startTangent = GetPolylineDirectionAtStart(centerPolyline);
 
-        Vector3 forwardBase = end - direction * (endCut + stopLineOffset);
-        Vector3 backwardBase = start + direction * (startCut + stopLineOffset);
+        Vector3 endNormal = new Vector3(-endTangent.y, endTangent.x, 0f);
+        Vector3 startNormal = new Vector3(-startTangent.y, startTangent.x, 0f);
 
-        UpdateStopLineRenderer(
+        UpdateStopLineRendererFromLanes(
             forwardStopLineRenderer,
             showForward,
             "StopLine_Forward",
-            forwardBase,
-            normal,
-            forwardCenterOffset,
-            forwardWidth
+            forwardDriving,
+            endNormal,
+            forwardLanes * laneWidth
         );
 
-        UpdateStopLineRenderer(
+        UpdateStopLineRendererFromLanes(
             backwardStopLineRenderer,
             showBackward,
             "StopLine_Backward",
-            backwardBase,
-            normal,
-            backwardCenterOffset,
-            backwardWidth
+            backwardDriving,
+            startNormal,
+            backwardLanes * laneWidth
         );
     }
 
-    private void UpdateStopLineRenderer(
+    private void UpdateStopLineRendererFromLanes(
     LineRenderer renderer,
     bool visible,
     string objectName,
-    Vector3 basePoint,
+    List<RoadLaneDataV2> lanes,
     Vector3 normal,
-    float carriageCenterOffset,
     float carriageWidth)
     {
         if (renderer == null)
@@ -531,11 +518,28 @@ private void OnDestroy()
         renderer.gameObject.name = objectName;
         renderer.enabled = visible;
 
-        if (!visible || carriageWidth <= 0.01f)
+        if (!visible || lanes == null || lanes.Count == 0 || carriageWidth <= 0.01f)
             return;
 
-        Vector3 center = basePoint + normal * carriageCenterOffset;
-        Vector3 halfSpan = normal * (carriageWidth * 0.5f);
+        Vector3 center = Vector3.zero;
+        int count = 0;
+
+        for (int i = 0; i < lanes.Count; i++)
+        {
+            RoadLaneDataV2 lane = lanes[i];
+            if (lane == null)
+                continue;
+
+            center += lane.end;
+            count++;
+        }
+
+        if (count == 0)
+            return;
+
+        center /= count;
+
+        Vector3 halfSpan = normal.normalized * (carriageWidth * 0.5f);
 
         Vector3 a = center - halfSpan;
         Vector3 b = center + halfSpan;
@@ -552,6 +556,8 @@ private void OnDestroy()
         renderer.endColor = stopLineColor;
         renderer.sortingOrder = stopLineSortingOrder;
     }
+
+    
 
     public bool TryGetDrivingLane(RoadNodeV2 fromNode, RoadNodeV2 toNode, out RoadLaneDataV2 lane)
 {
@@ -626,6 +632,171 @@ private void OnDestroy()
         }
 
         return Mathf.Clamp(cut, 0f, segmentLength * 0.45f);
+    }
+
+    private List<Vector3> BuildCenterPolyline()
+    {
+        List<Vector3> points = new List<Vector3>();
+
+        if (startNode == null || endNode == null)
+            return points;
+
+        Vector3 start = startNode.transform.position;
+        Vector3 end = endNode.transform.position;
+
+        if (!isCurved)
+        {
+            points.Add(start);
+            points.Add(end);
+            return points;
+        }
+
+        int samples = Mathf.Clamp(curveSampleCount, 4, 32);
+
+        for (int i = 0; i <= samples; i++)
+        {
+            float t = i / (float)samples;
+            points.Add(EvaluateQuadraticBezier(start, curveControlPoint, end, t));
+        }
+
+        return points;
+    }
+
+    private Vector3 EvaluateQuadraticBezier(Vector3 a, Vector3 b, Vector3 c, float t)
+    {
+        float u = 1f - t;
+        return u * u * a + 2f * u * t * b + t * t * c;
+    }
+
+    private float GetPolylineLength(List<Vector3> polyline)
+    {
+        float length = 0f;
+
+        if (polyline == null)
+            return length;
+
+        for (int i = 0; i < polyline.Count - 1; i++)
+            length += Vector3.Distance(polyline[i], polyline[i + 1]);
+
+        return length;
+    }
+
+    private List<Vector3> BuildOffsetPolyline(List<Vector3> centerPolyline, float offset)
+    {
+        List<Vector3> result = new List<Vector3>();
+
+        if (centerPolyline == null || centerPolyline.Count < 2)
+            return result;
+
+        for (int i = 0; i < centerPolyline.Count; i++)
+        {
+            Vector3 tangent;
+
+            if (i == 0)
+                tangent = (centerPolyline[1] - centerPolyline[0]).normalized;
+            else if (i == centerPolyline.Count - 1)
+                tangent = (centerPolyline[i] - centerPolyline[i - 1]).normalized;
+            else
+                tangent = (centerPolyline[i + 1] - centerPolyline[i - 1]).normalized;
+
+            if (tangent.sqrMagnitude < 0.0001f)
+                tangent = Vector3.right;
+
+            Vector3 normal = new Vector3(-tangent.y, tangent.x, 0f);
+            result.Add(centerPolyline[i] + normal * offset);
+        }
+
+        return result;
+    }
+
+    private List<Vector3> TrimPolyline(List<Vector3> points, float startTrim, float endTrim)
+    {
+        List<Vector3> result = new List<Vector3>();
+
+        if (points == null || points.Count < 2)
+            return result;
+
+        float totalLength = GetPolylineLength(points);
+        float from = Mathf.Clamp(startTrim, 0f, totalLength);
+        float to = Mathf.Clamp(totalLength - endTrim, 0f, totalLength);
+
+        if (to <= from + 0.001f)
+            return result;
+
+        float accumulated = 0f;
+
+        for (int i = 0; i < points.Count - 1; i++)
+        {
+            Vector3 a = points[i];
+            Vector3 b = points[i + 1];
+            float segLength = Vector3.Distance(a, b);
+
+            if (segLength < 0.0001f)
+                continue;
+
+            float segStart = accumulated;
+            float segEnd = accumulated + segLength;
+
+            if (segEnd < from)
+            {
+                accumulated = segEnd;
+                continue;
+            }
+
+            if (segStart > to)
+                break;
+
+            float localFrom = Mathf.Clamp(from - segStart, 0f, segLength);
+            float localTo = Mathf.Clamp(to - segStart, 0f, segLength);
+
+            if (localTo <= localFrom + 0.0001f)
+            {
+                accumulated = segEnd;
+                continue;
+            }
+
+            Vector3 dir = (b - a) / segLength;
+            Vector3 p0 = a + dir * localFrom;
+            Vector3 p1 = a + dir * localTo;
+
+            if (result.Count == 0 || Vector3.Distance(result[result.Count - 1], p0) > 0.005f)
+                result.Add(p0);
+
+            if (Vector3.Distance(result[result.Count - 1], p1) > 0.005f)
+                result.Add(p1);
+
+            accumulated = segEnd;
+        }
+
+        return result;
+    }
+
+    private List<Vector3> BuildTrimmedOffsetPolyline(
+        List<Vector3> centerPolyline,
+        float offset,
+        float startCut,
+        float endCut)
+    {
+        List<Vector3> offsetPolyline = BuildOffsetPolyline(centerPolyline, offset);
+        return TrimPolyline(offsetPolyline, startCut, endCut);
+    }
+
+    private Vector3 GetPolylineDirectionAtStart(List<Vector3> polyline)
+    {
+        if (polyline == null || polyline.Count < 2)
+            return Vector3.right;
+
+        Vector3 dir = (polyline[1] - polyline[0]).normalized;
+        return dir.sqrMagnitude < 0.0001f ? Vector3.right : dir;
+    }
+
+    private Vector3 GetPolylineDirectionAtEnd(List<Vector3> polyline)
+    {
+        if (polyline == null || polyline.Count < 2)
+            return Vector3.right;
+
+        Vector3 dir = (polyline[polyline.Count - 1] - polyline[polyline.Count - 2]).normalized;
+        return dir.sqrMagnitude < 0.0001f ? Vector3.right : dir;
     }
 
     private void EnsureLaneDataCount(int targetCount)
@@ -788,8 +959,8 @@ private void OnDestroy()
 
         roadRenderer.sharedMaterial = cachedMaterial;
         roadRenderer.useWorldSpace = true;
-        roadRenderer.numCapVertices = 4;
-        roadRenderer.numCornerVertices = 4;
+        roadRenderer.numCapVertices = 0;
+        roadRenderer.numCornerVertices = 0;
         roadRenderer.textureMode = LineTextureMode.Stretch;
         roadRenderer.alignment = LineAlignment.TransformZ;
         roadRenderer.sortingOrder = 5;

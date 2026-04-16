@@ -35,7 +35,46 @@ public class RoadLaneV2 : MonoBehaviour
         int sortingOrder)
     {
         width = Mathf.Max(0.02f, newWidth);
-        DrawSegments(start, end, width, color, sortingOrder, 0f, 0f, 0f, 0f, false);
+
+        List<Vector3> points = new List<Vector3> { start, end };
+        UpdatePolylineVisual(points, width, color, sortingOrder);
+    }
+
+    public void UpdatePolylineVisual(
+        List<Vector3> points,
+        float newWidth,
+        Color color,
+        int sortingOrder)
+    {
+        width = Mathf.Max(0.02f, newWidth);
+
+        if (points == null || points.Count < 2)
+        {
+            Hide();
+            return;
+        }
+
+        EnsureSegmentRendererCount(points.Count - 1);
+
+        int rendererIndex = 0;
+
+        for (int i = 0; i < points.Count - 1; i++)
+        {
+            Vector3 a = points[i];
+            Vector3 b = points[i + 1];
+
+            if (Vector3.Distance(a, b) < 0.01f)
+                continue;
+
+            ApplySegment(segmentRenderers[rendererIndex], a, b, width, color, sortingOrder);
+            rendererIndex++;
+        }
+
+        for (int i = rendererIndex; i < segmentRenderers.Count; i++)
+        {
+            if (segmentRenderers[i] != null)
+                segmentRenderers[i].enabled = false;
+        }
     }
 
     public void UpdateRestrictedDashedVisual(
@@ -51,18 +90,127 @@ public class RoadLaneV2 : MonoBehaviour
     {
         width = Mathf.Max(0.02f, newWidth);
 
-        DrawSegments(
-            start,
-            end,
+        List<Vector3> points = new List<Vector3> { start, end };
+        UpdateRestrictedDashedPolylineVisual(
+            points,
             width,
             color,
             sortingOrder,
             solidStartLength,
             solidEndLength,
             dashLength,
-            gapLength,
-            true
+            gapLength
         );
+    }
+
+    public void UpdateRestrictedDashedPolylineVisual(
+        List<Vector3> points,
+        float newWidth,
+        Color color,
+        int sortingOrder,
+        float solidStartLength,
+        float solidEndLength,
+        float dashLength,
+        float gapLength)
+    {
+        width = Mathf.Max(0.02f, newWidth);
+
+        if (points == null || points.Count < 2)
+        {
+            Hide();
+            return;
+        }
+
+        float totalLength = GetPolylineLength(points);
+        if (totalLength < 0.0001f)
+        {
+            Hide();
+            return;
+        }
+
+        float startSolid = Mathf.Clamp(solidStartLength, 0f, totalLength);
+        float endSolid = Mathf.Clamp(solidEndLength, 0f, totalLength - startSolid);
+
+        float dashedStart = startSolid;
+        float dashedEnd = totalLength - endSolid;
+
+        List<List<Vector3>> visibleRanges = new List<List<Vector3>>();
+
+        if (dashedEnd <= dashedStart + 0.02f)
+        {
+            List<Vector3> full = ExtractPolylineRange(points, 0f, totalLength);
+            if (full.Count >= 2)
+                visibleRanges.Add(full);
+        }
+        else
+        {
+            if (startSolid > 0.02f)
+            {
+                List<Vector3> startRange = ExtractPolylineRange(points, 0f, startSolid);
+                if (startRange.Count >= 2)
+                    visibleRanges.Add(startRange);
+            }
+
+            float dash = Mathf.Max(0.05f, dashLength);
+            float gap = Mathf.Max(0.02f, gapLength);
+
+            for (float d = dashedStart; d < dashedEnd - 0.02f; d += dash + gap)
+            {
+                float a = d;
+                float b = Mathf.Min(d + dash, dashedEnd);
+
+                if (b - a <= 0.02f)
+                    continue;
+
+                List<Vector3> dashRange = ExtractPolylineRange(points, a, b);
+                if (dashRange.Count >= 2)
+                    visibleRanges.Add(dashRange);
+            }
+
+            if (endSolid > 0.02f)
+            {
+                List<Vector3> endRange = ExtractPolylineRange(points, totalLength - endSolid, totalLength);
+                if (endRange.Count >= 2)
+                    visibleRanges.Add(endRange);
+            }
+        }
+
+        if (visibleRanges.Count == 0)
+        {
+            Hide();
+            return;
+        }
+
+        int requiredRenderers = 0;
+        for (int i = 0; i < visibleRanges.Count; i++)
+            requiredRenderers += Mathf.Max(0, visibleRanges[i].Count - 1);
+
+        EnsureSegmentRendererCount(requiredRenderers);
+
+        int rendererIndex = 0;
+
+        for (int i = 0; i < visibleRanges.Count; i++)
+        {
+            List<Vector3> range = visibleRanges[i];
+
+            for (int j = 0; j < range.Count - 1; j++)
+            {
+                Vector3 a = range[j];
+                Vector3 b = range[j + 1];
+
+                if (Vector3.Distance(a, b) < 0.01f)
+                    continue;
+
+                ApplySegment(segmentRenderers[rendererIndex], a, b, width, color, sortingOrder);
+                rendererIndex++;
+            }
+        }
+
+        for (int i = rendererIndex; i < segmentRenderers.Count; i++)
+        {
+            if (segmentRenderers[i] != null)
+                segmentRenderers[i].enabled = false;
+        }
     }
 
     public void Hide()
@@ -90,96 +238,79 @@ public class RoadLaneV2 : MonoBehaviour
         }
     }
 
-    private void DrawSegments(
-        Vector3 start,
-        Vector3 end,
-        float lineWidth,
-        Color color,
-        int sortingOrder,
-        float solidStartLength,
-        float solidEndLength,
-        float dashLength,
-        float gapLength,
-        bool useDashed)
+    private float GetPolylineLength(List<Vector3> points)
     {
-        Vector3 delta = end - start;
-        float totalLength = delta.magnitude;
+        float length = 0f;
 
-        if (totalLength < 0.0001f)
+        if (points == null)
+            return length;
+
+        for (int i = 0; i < points.Count - 1; i++)
+            length += Vector3.Distance(points[i], points[i + 1]);
+
+        return length;
+    }
+
+    private List<Vector3> ExtractPolylineRange(List<Vector3> points, float fromDistance, float toDistance)
+    {
+        List<Vector3> result = new List<Vector3>();
+
+        if (points == null || points.Count < 2)
+            return result;
+
+        float totalLength = GetPolylineLength(points);
+        fromDistance = Mathf.Clamp(fromDistance, 0f, totalLength);
+        toDistance = Mathf.Clamp(toDistance, 0f, totalLength);
+
+        if (toDistance <= fromDistance + 0.001f)
+            return result;
+
+        float accumulated = 0f;
+
+        for (int i = 0; i < points.Count - 1; i++)
         {
-            Hide();
-            return;
-        }
+            Vector3 a = points[i];
+            Vector3 b = points[i + 1];
+            float segLength = Vector3.Distance(a, b);
 
-        if (!useDashed)
-        {
-            EnsureSegmentRendererCount(1);
-            ApplySegment(segmentRenderers[0], start, end, lineWidth, color, sortingOrder);
+            if (segLength < 0.0001f)
+                continue;
 
-            for (int i = 1; i < segmentRenderers.Count; i++)
+            float segStart = accumulated;
+            float segEnd = accumulated + segLength;
+
+            if (segEnd < fromDistance)
             {
-                if (segmentRenderers[i] != null)
-                    segmentRenderers[i].enabled = false;
+                accumulated = segEnd;
+                continue;
             }
 
-            return;
-        }
+            if (segStart > toDistance)
+                break;
 
-        Vector3 dir = delta / totalLength;
+            float localFrom = Mathf.Clamp(fromDistance - segStart, 0f, segLength);
+            float localTo = Mathf.Clamp(toDistance - segStart, 0f, segLength);
 
-        float startSolid = Mathf.Clamp(solidStartLength, 0f, totalLength);
-        float endSolid = Mathf.Clamp(solidEndLength, 0f, totalLength - startSolid);
-
-        float dashedStart = startSolid;
-        float dashedEnd = totalLength - endSolid;
-
-        List<Vector2> ranges = new List<Vector2>();
-
-        if (dashedEnd <= dashedStart + 0.02f)
-        {
-            ranges.Add(new Vector2(0f, totalLength));
-        }
-        else
-        {
-            if (startSolid > 0.02f)
-                ranges.Add(new Vector2(0f, startSolid));
-
-            float dash = Mathf.Max(0.05f, dashLength);
-            float gap = Mathf.Max(0.02f, gapLength);
-
-            for (float d = dashedStart; d < dashedEnd - 0.02f; d += dash + gap)
+            if (localTo <= localFrom + 0.0001f)
             {
-                float a = d;
-                float b = Mathf.Min(d + dash, dashedEnd);
-
-                if (b - a > 0.02f)
-                    ranges.Add(new Vector2(a, b));
+                accumulated = segEnd;
+                continue;
             }
 
-            if (endSolid > 0.02f)
-                ranges.Add(new Vector2(totalLength - endSolid, totalLength));
+            Vector3 dir = (b - a) / segLength;
+            Vector3 p0 = a + dir * localFrom;
+            Vector3 p1 = a + dir * localTo;
+
+            if (result.Count == 0 || Vector3.Distance(result[result.Count - 1], p0) > 0.005f)
+                result.Add(p0);
+
+            if (Vector3.Distance(result[result.Count - 1], p1) > 0.005f)
+                result.Add(p1);
+
+            accumulated = segEnd;
         }
 
-        if (ranges.Count == 0)
-        {
-            Hide();
-            return;
-        }
-
-        EnsureSegmentRendererCount(ranges.Count);
-
-        for (int i = 0; i < ranges.Count; i++)
-        {
-            Vector3 a = start + dir * ranges[i].x;
-            Vector3 b = start + dir * ranges[i].y;
-            ApplySegment(segmentRenderers[i], a, b, lineWidth, color, sortingOrder);
-        }
-
-        for (int i = ranges.Count; i < segmentRenderers.Count; i++)
-        {
-            if (segmentRenderers[i] != null)
-                segmentRenderers[i].enabled = false;
-        }
+        return result;
     }
 
     private void ApplySegment(

@@ -207,7 +207,7 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         if (lanePath == null || lanePath.Count == 0 || initialLane == null)
             return;
 
-        AddPointIfFar(initialLane.start);
+        AddLanePolyline(initialLane, includeFirstPoint: true, skipLastPoint: true);
 
         RoadLaneDataV2 activeLane = initialLane;
 
@@ -217,7 +217,7 @@ public class RoadVehicleAgentV2 : MonoBehaviour
 
             if (!hasNext)
             {
-                AddPointIfFar(activeLane.end);
+                AddLanePolyline(activeLane, includeFirstPoint: false, skipLastPoint: false);
                 continue;
             }
 
@@ -247,6 +247,8 @@ public class RoadVehicleAgentV2 : MonoBehaviour
 
                 activeLane = plannedLane;
             }
+
+            AddLanePolyline(activeLane, includeFirstPoint: false, skipLastPoint: true);
 
             RoadLaneConnectionV2 connection = FindConnection(activeLane, plannedNextLane);
 
@@ -405,8 +407,14 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         if (fromLane.ownerSegment != toLane.ownerSegment)
             return points;
 
-        Vector3 p0 = Vector3.Lerp(fromLane.start, fromLane.end, 0.40f);
-        Vector3 p2 = Vector3.Lerp(toLane.start, toLane.end, 0.72f);
+        List<Vector3> fromPoints = GetLanePolyline(fromLane);
+        List<Vector3> toPoints = GetLanePolyline(toLane);
+
+        if (fromPoints.Count < 2 || toPoints.Count < 2)
+            return points;
+
+        Vector3 p0 = GetPointAlongPolylineNormalized(fromPoints, 0.40f);
+        Vector3 p2 = GetPointAlongPolylineNormalized(toPoints, 0.72f);
         Vector3 p1 = Vector3.Lerp(p0, p2, 0.5f);
 
         points.Add(p0);
@@ -416,7 +424,99 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         return points;
     }
 
+    private void AddLanePolyline(RoadLaneDataV2 lane, bool includeFirstPoint, bool skipLastPoint)
+    {
+        List<Vector3> polyline = GetLanePolyline(lane);
+        if (polyline.Count == 0)
+            return;
 
+        int startIndex = includeFirstPoint ? 0 : 1;
+        int endExclusive = skipLastPoint ? polyline.Count - 1 : polyline.Count;
+
+        startIndex = Mathf.Clamp(startIndex, 0, polyline.Count);
+        endExclusive = Mathf.Clamp(endExclusive, 0, polyline.Count);
+
+        for (int i = startIndex; i < endExclusive; i++)
+            AddPointIfFar(polyline[i]);
+    }
+
+    private List<Vector3> GetLanePolyline(RoadLaneDataV2 lane)
+    {
+        List<Vector3> result = new List<Vector3>();
+
+        if (lane == null)
+            return result;
+
+        if (lane.sampledPoints != null && lane.sampledPoints.Count >= 2)
+        {
+            result.AddRange(lane.sampledPoints);
+            return result;
+        }
+
+        result.Add(lane.start);
+        result.Add(lane.end);
+        return result;
+    }
+
+    private Vector3 GetPointAlongPolylineNormalized(List<Vector3> points, float normalizedT)
+    {
+        if (points == null || points.Count == 0)
+            return Vector3.zero;
+
+        if (points.Count == 1)
+            return points[0];
+
+        float totalLength = GetPolylineLength(points);
+        if (totalLength < 0.0001f)
+            return points[0];
+
+        float targetDistance = Mathf.Clamp01(normalizedT) * totalLength;
+        return GetPointAlongPolylineDistance(points, targetDistance);
+    }
+
+    private Vector3 GetPointAlongPolylineDistance(List<Vector3> points, float distance)
+    {
+        if (points == null || points.Count == 0)
+            return Vector3.zero;
+
+        if (points.Count == 1)
+            return points[0];
+
+        float remaining = Mathf.Max(0f, distance);
+
+        for (int i = 0; i < points.Count - 1; i++)
+        {
+            Vector3 a = points[i];
+            Vector3 b = points[i + 1];
+            float segLength = Vector3.Distance(a, b);
+
+            if (segLength < 0.0001f)
+                continue;
+
+            if (remaining <= segLength)
+            {
+                float t = remaining / segLength;
+                return Vector3.Lerp(a, b, t);
+            }
+
+            remaining -= segLength;
+        }
+
+        return points[points.Count - 1];
+    }
+
+    private float GetPolylineLength(List<Vector3> points)
+    {
+        if (points == null || points.Count < 2)
+            return 0f;
+
+        float length = 0f;
+
+        for (int i = 0; i < points.Count - 1; i++)
+            length += Vector3.Distance(points[i], points[i + 1]);
+
+        return length;
+    }
 
 
     private GateInfo BuildGateFromRealConnection(RoadLaneConnectionV2 connection)

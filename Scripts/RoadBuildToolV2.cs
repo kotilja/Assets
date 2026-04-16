@@ -10,9 +10,11 @@ public class RoadBuildToolV2 : MonoBehaviour
     public enum ToolMode
     {
         DrawRoad,
+        DrawCurveRoad,
         DeleteRoad,
         JunctionControl,
         JunctionKeepClear,
+        JunctionSignals,
         JunctionTurns,
         LaneConnections
     }
@@ -55,11 +57,18 @@ public class RoadBuildToolV2 : MonoBehaviour
     [SerializeField] private Color turnEditPreviewColor = new Color(1f, 0.4f, 1f, 1f);
 
     [SerializeField] private RoadNodeV2 currentStartNode;
+    [SerializeField] private bool hasCurveControlPoint = false;
+    [SerializeField] private Vector3 currentCurveControlPoint = Vector3.zero;
     [SerializeField] private RoadNodeV2 selectedTurnNode;
     [SerializeField] private RoadSegmentV2 selectedIncomingSegment;
 
+    [SerializeField] private RoadNodeV2 selectedSignalNode;
+    [SerializeField] private RoadSegmentV2 selectedSignalIncomingSegment;
+
     [SerializeField] private int selectedFromLaneId;
     [SerializeField] private int selectedToLaneId;
+
+    
 
     public RoadNetworkV2 Network => network;
     public bool ToolEnabled => toolEnabled;
@@ -67,6 +76,8 @@ public class RoadBuildToolV2 : MonoBehaviour
 
     public bool HasCurrentStartNode => currentStartNode != null;
     public Vector3 CurrentStartPosition => currentStartNode != null ? currentStartNode.transform.position : Vector3.zero;
+    public bool HasCurveControlPoint => hasCurveControlPoint;
+    public Vector3 CurrentCurveControlPoint => currentCurveControlPoint;
 
     public float SnapDistance => snapDistance;
     public float DeletePickDistance => deletePickDistance;
@@ -82,6 +93,12 @@ public class RoadBuildToolV2 : MonoBehaviour
     public RoadNodeV2 SelectedTurnNode => selectedTurnNode;
     public RoadSegmentV2 SelectedIncomingSegment => selectedIncomingSegment;
 
+    public RoadNodeV2 SelectedSignalNode => selectedSignalNode;
+    public RoadSegmentV2 SelectedSignalIncomingSegment => selectedSignalIncomingSegment;
+
+    public RoadNodeSignalV2 SelectedSignal =>
+        selectedSignalNode != null ? selectedSignalNode.GetComponent<RoadNodeSignalV2>() : null;
+
     public float LanePickDistance => lanePickDistance;
 
     public RoadLaneDataV2 SelectedFromLane =>
@@ -94,6 +111,8 @@ public class RoadBuildToolV2 : MonoBehaviour
     {
         toolMode = mode;
         currentStartNode = null;
+        hasCurveControlPoint = false;
+        currentCurveControlPoint = Vector3.zero;
 
         if (toolMode != ToolMode.JunctionTurns)
         {
@@ -106,33 +125,69 @@ public class RoadBuildToolV2 : MonoBehaviour
             selectedFromLaneId = 0;
             selectedToLaneId = 0;
         }
+
+        if (toolMode != ToolMode.JunctionSignals)
+        {
+            selectedSignalNode = null;
+            selectedSignalIncomingSegment = null;
+        }
     }
 
     public Vector3 GetPreviewWorldPosition(Vector3 rawWorldPosition)
     {
         rawWorldPosition.z = 0f;
 
-        if (toolMode != ToolMode.DrawRoad)
+        if (toolMode != ToolMode.DrawRoad && toolMode != ToolMode.DrawCurveRoad)
             return rawWorldPosition;
 
         if (!snapToExistingSegments || network == null)
             return rawWorldPosition;
 
+        if (toolMode == ToolMode.DrawRoad)
+        {
+            if (currentStartNode == null)
+                return rawWorldPosition;
+
+            if (network.TryGetNearestPointOnSegment(
+                rawWorldPosition,
+                segmentSnapDistance,
+                out Vector3 snappedPoint,
+                out RoadSegmentV2 snappedSegment))
+            {
+                if (snappedSegment != null)
+                {
+                    float distanceFromStart = Vector3.Distance(snappedPoint, currentStartNode.transform.position);
+
+                    if (distanceFromStart >= minDistanceFromCurrentStartForSegmentSnap)
+                        return snappedPoint;
+                }
+            }
+
+            return rawWorldPosition;
+        }
+
+        // DrawCurveRoad:
+        // 1-й клик Ч старт
+        // 2-й клик Ч control point (не снапаем)
+        // 3-й клик Ч конец дороги (снапаем)
         if (currentStartNode == null)
+            return rawWorldPosition;
+
+        if (!hasCurveControlPoint)
             return rawWorldPosition;
 
         if (network.TryGetNearestPointOnSegment(
             rawWorldPosition,
             segmentSnapDistance,
-            out Vector3 snappedPoint,
-            out RoadSegmentV2 snappedSegment))
+            out Vector3 curveEndSnappedPoint,
+            out RoadSegmentV2 curveEndSnappedSegment))
         {
-            if (snappedSegment != null)
+            if (curveEndSnappedSegment != null)
             {
-                float distanceFromStart = Vector3.Distance(snappedPoint, currentStartNode.transform.position);
+                float distanceFromStart = Vector3.Distance(curveEndSnappedPoint, currentStartNode.transform.position);
 
                 if (distanceFromStart >= minDistanceFromCurrentStartForSegmentSnap)
-                    return snappedPoint;
+                    return curveEndSnappedPoint;
             }
         }
 
@@ -152,6 +207,10 @@ public class RoadBuildToolV2 : MonoBehaviour
                 HandleDrawClick(GetPreviewWorldPosition(worldPosition));
                 break;
 
+            case ToolMode.DrawCurveRoad:
+                HandleDrawCurveClick(GetPreviewWorldPosition(worldPosition));
+                break;
+
             case ToolMode.DeleteRoad:
                 HandleDeleteClick(worldPosition);
                 break;
@@ -164,6 +223,10 @@ public class RoadBuildToolV2 : MonoBehaviour
                 HandleJunctionKeepClearClick(worldPosition);
                 break;
 
+            case ToolMode.JunctionSignals:
+                HandleJunctionSignalsClick(worldPosition);
+                break;
+
             case ToolMode.JunctionTurns:
                 HandleJunctionTurnsClick(worldPosition);
                 break;
@@ -171,6 +234,7 @@ public class RoadBuildToolV2 : MonoBehaviour
             case ToolMode.LaneConnections:
                 HandleLaneConnectionsClick(worldPosition);
                 break;
+
         }
     }
 
@@ -198,6 +262,72 @@ public class RoadBuildToolV2 : MonoBehaviour
 
         currentStartNode = continueChain ? clickedNode : null;
         network.RefreshAll();
+    }
+
+    private void HandleDrawCurveClick(Vector3 worldPosition)
+    {
+        worldPosition.z = 0f;
+
+        if (currentStartNode == null)
+        {
+            RoadNodeV2 clickedStartNode = network.GetOrCreateNodeNear(worldPosition, snapDistance);
+            currentStartNode = clickedStartNode;
+            hasCurveControlPoint = false;
+            currentCurveControlPoint = Vector3.zero;
+            return;
+        }
+
+        if (!hasCurveControlPoint)
+        {
+            if (Vector3.Distance(currentStartNode.transform.position, worldPosition) < 0.05f)
+                return;
+
+            hasCurveControlPoint = true;
+            currentCurveControlPoint = worldPosition;
+            return;
+        }
+
+        RoadNodeV2 clickedEndNode = network.GetOrCreateNodeNear(worldPosition, snapDistance);
+
+        if (clickedEndNode == null || clickedEndNode == currentStartNode)
+            return;
+
+        Vector3 previousControlPoint = currentCurveControlPoint;
+
+        network.CreateCurvedSegment(
+            currentStartNode,
+            clickedEndNode,
+            previousControlPoint,
+            forwardLanes,
+            backwardLanes,
+            laneWidth,
+            speedLimit
+        );
+
+        if (continueChain)
+        {
+            currentStartNode = clickedEndNode;
+            currentCurveControlPoint = GetMirroredCurveControlPoint(
+                clickedEndNode.transform.position,
+                previousControlPoint
+            );
+            hasCurveControlPoint = true;
+        }
+        else
+        {
+            currentStartNode = null;
+            hasCurveControlPoint = false;
+            currentCurveControlPoint = Vector3.zero;
+        }
+
+        network.RefreshAll();
+    }
+
+    private Vector3 GetMirroredCurveControlPoint(Vector3 pivot, Vector3 previousControlPoint)
+    {
+        Vector3 mirrored = pivot + (pivot - previousControlPoint);
+        mirrored.z = 0f;
+        return mirrored;
     }
 
     public void HandleDeleteClick(Vector3 worldPosition)
@@ -311,6 +441,147 @@ public class RoadBuildToolV2 : MonoBehaviour
     EditorUtility.SetDirty(network);
     EditorSceneManager.MarkSceneDirty(gameObject.scene);
 #endif
+    }
+
+    public void HandleJunctionSignalsClick(Vector3 worldPosition)
+    {
+        if (!toolEnabled || network == null)
+            return;
+
+        currentStartNode = null;
+
+        RoadNodeV2 node = network.GetNearestIntersectionNode(worldPosition, junctionPickDistance);
+        if (node == null || !node.UsesTrafficLight)
+        {
+            selectedSignalNode = null;
+            selectedSignalIncomingSegment = null;
+            return;
+        }
+
+        RoadNodeSignalV2 signal = node.GetComponent<RoadNodeSignalV2>();
+        if (signal == null)
+        {
+#if UNITY_EDITOR
+        signal = Undo.AddComponent<RoadNodeSignalV2>(node.gameObject);
+#else
+            signal = node.gameObject.AddComponent<RoadNodeSignalV2>();
+#endif
+        }
+
+        signal.SyncFromNode();
+
+        selectedSignalNode = node;
+        selectedSignalIncomingSegment = FindNearestIncomingSegment(node, worldPosition, approachPickDistance);
+    }
+
+    public void SelectPreviousSignalPhase()
+    {
+        RoadNodeSignalV2 signal = SelectedSignal;
+        if (signal == null)
+            return;
+
+#if UNITY_EDITOR
+    Undo.RecordObject(signal, "Previous Signal Phase");
+#endif
+
+        signal.SelectPreviousPhase();
+        signal.SyncFromNode();
+
+#if UNITY_EDITOR
+    EditorUtility.SetDirty(signal);
+    EditorSceneManager.MarkSceneDirty(gameObject.scene);
+#endif
+    }
+
+    public void SelectNextSignalPhase()
+    {
+        RoadNodeSignalV2 signal = SelectedSignal;
+        if (signal == null)
+            return;
+
+#if UNITY_EDITOR
+    Undo.RecordObject(signal, "Next Signal Phase");
+#endif
+
+        signal.SelectNextPhase();
+        signal.SyncFromNode();
+
+#if UNITY_EDITOR
+    EditorUtility.SetDirty(signal);
+    EditorSceneManager.MarkSceneDirty(gameObject.scene);
+#endif
+    }
+
+    public void AddSignalPhase()
+    {
+        RoadNodeSignalV2 signal = SelectedSignal;
+        if (signal == null)
+            return;
+
+#if UNITY_EDITOR
+    Undo.RecordObject(signal, "Add Signal Phase");
+#endif
+
+        signal.AddPhaseCopyOfCurrent();
+        signal.SyncFromNode();
+
+#if UNITY_EDITOR
+    EditorUtility.SetDirty(signal);
+    EditorSceneManager.MarkSceneDirty(gameObject.scene);
+#endif
+    }
+
+    public void RemoveSignalPhase()
+    {
+        RoadNodeSignalV2 signal = SelectedSignal;
+        if (signal == null)
+            return;
+
+#if UNITY_EDITOR
+    Undo.RecordObject(signal, "Remove Signal Phase");
+#endif
+
+        signal.RemoveCurrentPhase();
+        signal.SyncFromNode();
+
+#if UNITY_EDITOR
+    EditorUtility.SetDirty(signal);
+    EditorSceneManager.MarkSceneDirty(gameObject.scene);
+#endif
+    }
+
+    public bool GetSelectedSignalMovementAllowed(RoadLaneConnectionV2.MovementType movementType)
+    {
+        RoadNodeSignalV2 signal = SelectedSignal;
+        if (signal == null || selectedSignalIncomingSegment == null)
+            return false;
+
+        return signal.GetMovementAllowedInCurrentPhase(selectedSignalIncomingSegment, movementType);
+    }
+
+    public void ToggleSelectedSignalMovement(RoadLaneConnectionV2.MovementType movementType)
+    {
+        RoadNodeSignalV2 signal = SelectedSignal;
+        if (signal == null || selectedSignalIncomingSegment == null)
+            return;
+
+#if UNITY_EDITOR
+    Undo.RecordObject(signal, "Toggle Signal Movement");
+#endif
+
+        signal.ToggleMovementInCurrentPhase(selectedSignalIncomingSegment, movementType);
+        signal.SyncFromNode();
+
+#if UNITY_EDITOR
+    EditorUtility.SetDirty(signal);
+    EditorSceneManager.MarkSceneDirty(gameObject.scene);
+#endif
+    }
+
+    public void ClearSignalSelection()
+    {
+        selectedSignalNode = null;
+        selectedSignalIncomingSegment = null;
     }
 
     public void ToggleSelectedApproachMovement(RoadLaneConnectionV2.MovementType movementType)
@@ -502,6 +773,8 @@ private RoadLaneDataV2 FindNearestOutgoingLane(RoadNodeV2 node, Vector3 worldPos
     public void ClearCurrentChain()
     {
         currentStartNode = null;
+        hasCurveControlPoint = false;
+        currentCurveControlPoint = Vector3.zero;
     }
 
     public void ClearTurnSelection()

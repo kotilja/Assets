@@ -1119,6 +1119,45 @@ private void AddManualConnection(RoadNodeV2 node, RoadLaneDataV2 fromLane, RoadL
         return firstCreated;
     }
 
+    public RoadSegmentV2 CreateCurvedSegment(
+    RoadNodeV2 startNode,
+    RoadNodeV2 endNode,
+    Vector3 controlPoint,
+    int forwardLanes,
+    int backwardLanes,
+    float laneWidth,
+    float speedLimit)
+    {
+        if (startNode == null || endNode == null)
+            return null;
+
+        if (startNode == endNode)
+            return null;
+
+        EnsureRoots();
+        CleanupNulls();
+
+        RoadSegmentV2 existingDirect = FindExistingSegment(startNode, endNode);
+        if (existingDirect != null)
+            return existingDirect;
+
+        RoadSegmentV2 segment = CreateSegmentRaw(
+            startNode,
+            endNode,
+            forwardLanes,
+            backwardLanes,
+            laneWidth,
+            speedLimit
+        );
+
+        if (segment == null)
+            return null;
+
+        segment.SetCurve(controlPoint);
+        RefreshAll();
+        return segment;
+    }
+
     private void AddSplitPoint(List<NewSegmentSplitPoint> splitPoints, float t, RoadNodeV2 node)
     {
         if (splitPoints == null || node == null)
@@ -1217,6 +1256,16 @@ private void SplitExistingSegment(RoadSegmentV2 segment, RoadNodeV2 splitNode)
         segmentObject.transform.position = Vector3.zero;
 
         RoadSegmentV2 segment = segmentObject.AddComponent<RoadSegmentV2>();
+        segment.Initialize(
+            nextSegmentId++,
+            startNode,
+            endNode,
+            forwardLanes,
+            backwardLanes,
+            laneWidth,
+            speedLimit
+        );
+
         if (!segments.Contains(segment))
             segments.Add(segment);
 
@@ -1224,7 +1273,7 @@ private void SplitExistingSegment(RoadSegmentV2 segment, RoadNodeV2 splitNode)
         endNode.RegisterSegment(segment);
 
 #if UNITY_EDITOR
-    Undo.RegisterCreatedObjectUndo(segmentObject, "Create Road Segment");
+Undo.RegisterCreatedObjectUndo(segmentObject, "Create Road Segment");
 #endif
 
         return segment;
