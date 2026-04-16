@@ -199,23 +199,55 @@ public class RoadNodeSignalV2 : MonoBehaviour
         }
 
         if (!Application.isPlaying)
+        {
+            RefreshSignalVisuals();
             return;
+        }
 
-        if (!autoCycle || !useCustomPhases)
-            return;
+        if (useCustomPhases)
+        {
+            EnsureDefaultPhases();
+            EnsureCustomPhaseCoverage();
 
-        if (phases == null || phases.Count == 0)
-            return;
+            if (autoCycle && phases != null && phases.Count > 0)
+            {
+                SignalPhase phase = GetCurrentPhase();
+                if (phase != null)
+                {
+                    phaseTimer += Time.deltaTime;
 
-        SignalPhase phase = GetCurrentPhase();
-        if (phase == null)
-            return;
+                    float duration = Mathf.Max(0.2f, phase.duration);
+                    if (phaseTimer >= duration)
+                        AdvancePhase();
+                }
+            }
+        }
+        else
+        {
+            stateTimer += Time.deltaTime;
 
-        phaseTimer += Time.deltaTime;
+            if (stateTimer >= GetCurrentStateDuration())
+            {
+                switch (currentState)
+                {
+                    case CycleState.Phase1Green:
+                        SwitchState(CycleState.Phase1Yellow);
+                        break;
 
-        float duration = Mathf.Max(0.2f, phase.duration);
-        if (phaseTimer >= duration)
-            AdvancePhase();
+                    case CycleState.Phase1Yellow:
+                        SwitchState(CycleState.Phase2Green);
+                        break;
+
+                    case CycleState.Phase2Green:
+                        SwitchState(CycleState.Phase2Yellow);
+                        break;
+
+                    case CycleState.Phase2Yellow:
+                        SwitchState(CycleState.Phase1Green);
+                        break;
+                }
+            }
+        }
 
         RefreshSignalVisuals();
     }
@@ -420,6 +452,99 @@ public class RoadNodeSignalV2 : MonoBehaviour
         return phases[currentPhaseIndex];
     }
 
+    private void EnsureCustomPhaseCoverage()
+    {
+        if (!useCustomPhases)
+            return;
+
+        List<RoadSegmentV2> incomingSegments = GetIncomingSegments();
+
+        if (phases == null)
+            phases = new List<SignalPhase>();
+
+        if (phases.Count == 0)
+        {
+            phases = BuildDefaultPhases();
+            currentPhaseIndex = 0;
+            phaseTimer = 0f;
+            return;
+        }
+
+        HashSet<RoadSegmentV2> incomingSet = new HashSet<RoadSegmentV2>(incomingSegments);
+
+        for (int i = 0; i < phases.Count; i++)
+        {
+            SignalPhase phase = phases[i];
+            if (phase == null)
+                continue;
+
+            if (phase.rules == null)
+                phase.rules = new List<SignalPhaseRule>();
+
+            for (int j = phase.rules.Count - 1; j >= 0; j--)
+            {
+                SignalPhaseRule rule = phase.rules[j];
+                if (rule == null || rule.incomingSegment == null || !incomingSet.Contains(rule.incomingSegment))
+                    phase.rules.RemoveAt(j);
+            }
+
+            for (int j = 0; j < incomingSegments.Count; j++)
+            {
+                RoadSegmentV2 incomingSegment = incomingSegments[j];
+                if (incomingSegment == null)
+                    continue;
+
+                bool found = false;
+
+                for (int k = 0; k < phase.rules.Count; k++)
+                {
+                    SignalPhaseRule rule = phase.rules[k];
+                    if (rule != null && rule.incomingSegment == incomingSegment)
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found)
+                {
+                    phase.rules.Add(new SignalPhaseRule
+                    {
+                        incomingSegment = incomingSegment,
+                        allowStraight = true,
+                        allowLeft = false,
+                        allowRight = true
+                    });
+                }
+            }
+        }
+
+        currentPhaseIndex = Mathf.Clamp(currentPhaseIndex, 0, Mathf.Max(0, phases.Count - 1));
+    }
+
+    private SignalPhaseRule FindRuleForSegment(SignalPhase phase, RoadSegmentV2 incomingSegment)
+    {
+        if (phase == null || phase.rules == null || incomingSegment == null)
+            return null;
+
+        for (int i = 0; i < phase.rules.Count; i++)
+        {
+            SignalPhaseRule rule = phase.rules[i];
+            if (rule != null && rule.incomingSegment == incomingSegment)
+                return rule;
+        }
+
+        return null;
+    }
+
+    private bool HasAnyAllowedMovement(SignalPhaseRule rule)
+    {
+        if (rule == null)
+            return false;
+
+        return rule.allowStraight || rule.allowLeft || rule.allowRight;
+    }
+
     public void SyncFromNode()
     {
         node = GetComponent<RoadNodeV2>();
@@ -428,6 +553,9 @@ public class RoadNodeSignalV2 : MonoBehaviour
             return;
 
         RebuildIncomingPhases();
+        EnsureDefaultPhases();
+        EnsureCustomPhaseCoverage();
+
         EnsureSignalsRoot();
         EnsureSignalHeads();
         RefreshSignalVisuals();
@@ -797,6 +925,25 @@ public class RoadNodeSignalV2 : MonoBehaviour
         if (incomingSegment == null)
             return false;
 
+        LampState lampState = GetLegacyLampStateForSegment(incomingSegment);
+
+        switch (lampState)
+        {
+            case LampState.Green:
+                return MovementTypeAllowed(movementType);
+
+            case LampState.Yellow:
+            case LampState.Red:
+            default:
+                return false;
+        }
+    }
+
+    private bool CanUseMovementFallback(RoadSegmentV2 incomingSegment, RoadLaneConnectionV2.MovementType movementType)
+    {
+        if (incomingSegment == null)
+            return false;
+
         LampState lampState = GetLampStateForSegment(incomingSegment);
 
         switch (lampState)
@@ -829,6 +976,22 @@ public class RoadNodeSignalV2 : MonoBehaviour
     }
 
     private LampState GetLampStateForSegment(RoadSegmentV2 incomingSegment)
+    {
+        if (useCustomPhases)
+        {
+            SignalPhase phase = GetCurrentPhase();
+            SignalPhaseRule rule = FindRuleForSegment(phase, incomingSegment);
+
+            if (rule != null && HasAnyAllowedMovement(rule))
+                return LampState.Green;
+
+            return LampState.Red;
+        }
+
+        return GetLegacyLampStateForSegment(incomingSegment);
+    }
+
+    private LampState GetLegacyLampStateForSegment(RoadSegmentV2 incomingSegment)
     {
         if (incomingSegment == null)
             return LampState.Red;
@@ -876,6 +1039,12 @@ public class RoadNodeSignalV2 : MonoBehaviour
 
     public string GetCurrentPhaseLabel()
     {
+        if (useCustomPhases)
+        {
+            SignalPhase phase = GetCurrentPhase();
+            return phase != null ? phase.name : "-";
+        }
+
         switch (currentState)
         {
             case CycleState.Phase1Green:
@@ -896,6 +1065,15 @@ public class RoadNodeSignalV2 : MonoBehaviour
 
     public float GetSecondsUntilNextPhase()
     {
+        if (useCustomPhases)
+        {
+            SignalPhase phase = GetCurrentPhase();
+            if (phase == null)
+                return 0f;
+
+            return Mathf.Max(0f, Mathf.Max(0.2f, phase.duration) - phaseTimer);
+        }
+
         return Mathf.Max(0f, GetCurrentStateDuration() - stateTimer);
     }
 
