@@ -33,14 +33,15 @@ public class RoadSegmentV2 : MonoBehaviour
     [SerializeField] private bool leftSidewalk = true;
     [SerializeField] private bool rightSidewalk = true;
     [SerializeField] private float sidewalkWidth = 0.32f;
-    [SerializeField] private float sidewalkOffset = 0.10f;
+    [SerializeField] private float sidewalkOffset = 0f;
     [SerializeField] private Color sidewalkColor = new Color(0.55f, 0.55f, 0.55f, 1f);
     [SerializeField] private int sidewalkSortingOrder = 4;
 
     [Header("Lane markings")]
     [SerializeField] private Color laneMarkingColor = new Color(0.85f, 0.92f, 1f, 0.95f);
-    [SerializeField] private Color centerSeparatorColor = new Color(1f, 0.92f, 0.2f, 0.95f);
+    [SerializeField] private Color centerSeparatorColor = new Color(1f, 1f, 1f, 0.95f);
     [SerializeField] private float laneMarkingWidth = 0.05f;
+    [SerializeField] private float centerDoubleLineSpacing = 0.12f;
     [SerializeField] private float laneMarkingDashLength = 0.42f;
     [SerializeField] private float laneMarkingGapLength = 0.24f;
     [SerializeField] private int laneMarkingSortingOrder = 12;
@@ -207,9 +208,12 @@ private void OnDestroy()
         if (centerPolyline.Count < 2)
             return;
 
+        float startRoadWidth = GetNodeVisualRoadWidth(startNode, TotalRoadWidth);
+        float endRoadWidth = GetNodeVisualRoadWidth(endNode, TotalRoadWidth);
+
         roadRenderer.positionCount = centerPolyline.Count;
-        roadRenderer.startWidth = TotalRoadWidth;
-        roadRenderer.endWidth = TotalRoadWidth;
+        roadRenderer.startWidth = startRoadWidth;
+        roadRenderer.endWidth = endRoadWidth;
         roadRenderer.startColor = roadColor;
         roadRenderer.endColor = roadColor;
 
@@ -273,6 +277,9 @@ private void OnDestroy()
         if (lane == null)
             return 0;
 
+        if (!HasRealIntersectionAtEitherEnd(lane))
+            return 0;
+
         int mask = 0;
 
         for (int i = 0; i < lane.outgoingConnections.Count; i++)
@@ -303,6 +310,19 @@ private void OnDestroy()
         return mask;
     }
 
+    private bool HasRealIntersectionAtEitherEnd(RoadLaneDataV2 lane)
+    {
+        if (lane == null)
+            return false;
+
+        return IsRealIntersectionNode(lane.fromNode) || IsRealIntersectionNode(lane.toNode);
+    }
+
+    private bool IsRealIntersectionNode(RoadNodeV2 node)
+    {
+        return node != null && node.IsIntersection;
+    }
+
 
     private void RebuildLaneVisualsAndData(List<Vector3> centerPolyline)
     {
@@ -316,18 +336,23 @@ private void OnDestroy()
 
         float startCut = GetNodeCutDistance(startNode, segmentLength);
         float endCut = GetNodeCutDistance(endNode, segmentLength);
+        float startRoadWidth = GetNodeVisualRoadWidth(startNode, TotalRoadWidth);
+        float endRoadWidth = GetNodeVisualRoadWidth(endNode, TotalRoadWidth);
 
         int laneCounter = 0;
         int globalLaneIdSeed = id * 100;
 
-        float rightEdgeCenter = -TotalRoadWidth * 0.5f + laneWidth * 0.5f;
-        float leftEdgeCenter = TotalRoadWidth * 0.5f - laneWidth * 0.5f;
+        float startRightEdgeCenter = -startRoadWidth * 0.5f + laneWidth * 0.5f;
+        float endRightEdgeCenter = -endRoadWidth * 0.5f + laneWidth * 0.5f;
+        float startLeftEdgeCenter = startRoadWidth * 0.5f - laneWidth * 0.5f;
+        float endLeftEdgeCenter = endRoadWidth * 0.5f - laneWidth * 0.5f;
 
         for (int i = 0; i < forwardLanes; i++)
         {
-            float offset = rightEdgeCenter + i * laneWidth;
+            float startOffset = startRightEdgeCenter + i * laneWidth;
+            float endOffset = endRightEdgeCenter + i * laneWidth;
 
-            List<Vector3> lanePolyline = BuildTrimmedOffsetPolyline(centerPolyline, offset, startCut, endCut);
+            List<Vector3> lanePolyline = BuildTrimmedTaperedOffsetPolyline(centerPolyline, startOffset, endOffset, startCut, endCut);
             if (lanePolyline.Count < 2)
                 continue;
 
@@ -353,9 +378,10 @@ private void OnDestroy()
 
         for (int i = 0; i < backwardLanes; i++)
         {
-            float offset = leftEdgeCenter - i * laneWidth;
+            float startOffset = startLeftEdgeCenter - i * laneWidth;
+            float endOffset = endLeftEdgeCenter - i * laneWidth;
 
-            List<Vector3> lanePolyline = BuildTrimmedOffsetPolyline(centerPolyline, offset, startCut, endCut);
+            List<Vector3> lanePolyline = BuildTrimmedTaperedOffsetPolyline(centerPolyline, startOffset, endOffset, startCut, endCut);
             if (lanePolyline.Count < 2)
                 continue;
 
@@ -382,7 +408,7 @@ private void OnDestroy()
             laneCounter++;
         }
 
-        UpdateLaneMarkings(centerPolyline, startCut, endCut, rightEdgeCenter, leftEdgeCenter);
+        UpdateLaneMarkings(centerPolyline, startCut, endCut, startRoadWidth, endRoadWidth);
         UpdateStopLineVisuals(centerPolyline, startCut, endCut);
     }
 
@@ -394,7 +420,7 @@ private void OnDestroy()
             count += forwardLanes - 1;
 
         if (forwardLanes > 0 && backwardLanes > 0)
-            count += 1;
+            count += UsesDoubleCenterSeparator() ? 2 : 1;
 
         if (backwardLanes > 1)
             count += backwardLanes - 1;
@@ -406,19 +432,29 @@ private void OnDestroy()
     List<Vector3> centerPolyline,
     float startCut,
     float endCut,
-    float rightEdgeCenter,
-    float leftEdgeCenter)
+    float startRoadWidth,
+    float endRoadWidth)
     {
         int markingIndex = 0;
+
+        float markingStartCut = GetLaneMarkingCutDistance(startNode, startCut);
+        float markingEndCut = GetLaneMarkingCutDistance(endNode, endCut);
 
         float startRestricted = Mathf.Max(0f, noLaneChangeNearStart);
         float endRestricted = Mathf.Max(0f, noLaneChangeNearEnd);
 
         for (int i = 0; i < forwardLanes - 1; i++)
         {
-            float offset = rightEdgeCenter + (i + 0.5f) * laneWidth;
+            float startOffset = -startRoadWidth * 0.5f + (i + 1f) * laneWidth;
+            float endOffset = -endRoadWidth * 0.5f + (i + 1f) * laneWidth;
 
-            List<Vector3> markingPolyline = BuildTrimmedOffsetPolyline(centerPolyline, offset, startCut, endCut);
+            List<Vector3> markingPolyline = BuildTrimmedTaperedOffsetPolyline(
+                centerPolyline,
+                startOffset,
+                endOffset,
+                markingStartCut,
+                markingEndCut
+            );
 
             RoadLaneV2 marking = laneVisuals[markingIndex];
             marking.Initialize(i, RoadLaneV2.LaneDirection.Forward);
@@ -438,27 +474,86 @@ private void OnDestroy()
 
         if (forwardLanes > 0 && backwardLanes > 0)
         {
-            float centerOffset = -TotalRoadWidth * 0.5f + forwardLanes * laneWidth;
+            float baseStartCenterOffset = -startRoadWidth * 0.5f + forwardLanes * laneWidth;
+            float baseEndCenterOffset = -endRoadWidth * 0.5f + forwardLanes * laneWidth;
 
-            List<Vector3> centerPolylineMarking = BuildTrimmedOffsetPolyline(centerPolyline, centerOffset, startCut, endCut);
+            if (UsesDoubleCenterSeparator())
+            {
+                float halfSpacing = Mathf.Max(laneMarkingWidth * 1.5f, centerDoubleLineSpacing * 0.5f);
 
-            RoadLaneV2 marking = laneVisuals[markingIndex];
-            marking.Initialize(0, RoadLaneV2.LaneDirection.Forward);
-            marking.UpdatePolylineVisual(
-                centerPolylineMarking,
-                laneMarkingWidth,
-                centerSeparatorColor,
-                centerSeparatorSortingOrder
-            );
+                List<Vector3> firstCenterPolyline = BuildTrimmedTaperedOffsetPolyline(
+                    centerPolyline,
+                    baseStartCenterOffset - halfSpacing,
+                    baseEndCenterOffset - halfSpacing,
+                    markingStartCut,
+                    markingEndCut
+                );
 
-            markingIndex++;
+                RoadLaneV2 firstMarking = laneVisuals[markingIndex];
+                firstMarking.Initialize(0, RoadLaneV2.LaneDirection.Forward);
+                firstMarking.UpdatePolylineVisual(
+                    firstCenterPolyline,
+                    laneMarkingWidth,
+                    centerSeparatorColor,
+                    centerSeparatorSortingOrder
+                );
+
+                markingIndex++;
+
+                List<Vector3> secondCenterPolyline = BuildTrimmedTaperedOffsetPolyline(
+                    centerPolyline,
+                    baseStartCenterOffset + halfSpacing,
+                    baseEndCenterOffset + halfSpacing,
+                    markingStartCut,
+                    markingEndCut
+                );
+
+                RoadLaneV2 secondMarking = laneVisuals[markingIndex];
+                secondMarking.Initialize(1, RoadLaneV2.LaneDirection.Forward);
+                secondMarking.UpdatePolylineVisual(
+                    secondCenterPolyline,
+                    laneMarkingWidth,
+                    centerSeparatorColor,
+                    centerSeparatorSortingOrder
+                );
+
+                markingIndex++;
+            }
+            else
+            {
+                List<Vector3> centerPolylineMarking = BuildTrimmedTaperedOffsetPolyline(
+                    centerPolyline,
+                    baseStartCenterOffset,
+                    baseEndCenterOffset,
+                    markingStartCut,
+                    markingEndCut
+                );
+
+                RoadLaneV2 marking = laneVisuals[markingIndex];
+                marking.Initialize(0, RoadLaneV2.LaneDirection.Forward);
+                marking.UpdatePolylineVisual(
+                    centerPolylineMarking,
+                    laneMarkingWidth,
+                    centerSeparatorColor,
+                    centerSeparatorSortingOrder
+                );
+
+                markingIndex++;
+            }
         }
 
         for (int i = 0; i < backwardLanes - 1; i++)
         {
-            float offset = leftEdgeCenter - (i + 0.5f) * laneWidth;
+            float startOffset = startRoadWidth * 0.5f - (i + 1f) * laneWidth;
+            float endOffset = endRoadWidth * 0.5f - (i + 1f) * laneWidth;
 
-            List<Vector3> markingPolyline = BuildTrimmedOffsetPolyline(centerPolyline, offset, startCut, endCut);
+            List<Vector3> markingPolyline = BuildTrimmedTaperedOffsetPolyline(
+                centerPolyline,
+                startOffset,
+                endOffset,
+                markingStartCut,
+                markingEndCut
+            );
 
             RoadLaneV2 marking = laneVisuals[markingIndex];
             marking.Initialize(i, RoadLaneV2.LaneDirection.Backward);
@@ -481,6 +576,22 @@ private void OnDestroy()
             if (laneVisuals[i] != null)
                 laneVisuals[i].Hide();
         }
+    }
+
+    private float GetLaneMarkingCutDistance(RoadNodeV2 node, float baseCut)
+    {
+        float cut = Mathf.Max(0f, baseCut);
+
+        if (node == null || !node.IsIntersection)
+            return cut;
+
+        float extraIntersectionClearance = stopLineOffset + Mathf.Max(laneWidth * 0.75f, 0.35f);
+        return Mathf.Max(cut, extraIntersectionClearance);
+    }
+
+    private bool UsesDoubleCenterSeparator()
+    {
+        return forwardLanes >= 2 && backwardLanes >= 2;
     }
 
     private void UpdateStopLineVisuals(
@@ -707,8 +818,16 @@ private void OnDestroy()
             return new List<Vector3>();
 
         List<Vector3> centerPolyline = BuildCenterPolyline();
-        float offset = TotalRoadWidth * 0.5f + sidewalkOffset + sidewalkWidth * 0.5f;
-        return BuildOffsetPolyline(centerPolyline, offset);
+        float startRoadWidth = GetNodeVisualRoadWidth(startNode, TotalRoadWidth);
+        float endRoadWidth = GetNodeVisualRoadWidth(endNode, TotalRoadWidth);
+        float segmentLength = GetPolylineLength(centerPolyline);
+        float startCut = GetNodeCutDistance(startNode, segmentLength);
+        float endCut = GetNodeCutDistance(endNode, segmentLength);
+        float startOffset = startRoadWidth * 0.5f + sidewalkWidth * 0.5f;
+        float endOffset = endRoadWidth * 0.5f + sidewalkWidth * 0.5f;
+        List<Vector3> sidewalkPolyline = BuildTaperedOffsetPolyline(centerPolyline, startOffset, endOffset);
+        ExtendPolylineForSimpleJoints(sidewalkPolyline, startNode, endNode, true);
+        return TrimPolyline(sidewalkPolyline, startCut, endCut);
     }
 
     public List<Vector3> GetRightSidewalkPolylineWorld()
@@ -717,8 +836,16 @@ private void OnDestroy()
             return new List<Vector3>();
 
         List<Vector3> centerPolyline = BuildCenterPolyline();
-        float offset = -(TotalRoadWidth * 0.5f + sidewalkOffset + sidewalkWidth * 0.5f);
-        return BuildOffsetPolyline(centerPolyline, offset);
+        float startRoadWidth = GetNodeVisualRoadWidth(startNode, TotalRoadWidth);
+        float endRoadWidth = GetNodeVisualRoadWidth(endNode, TotalRoadWidth);
+        float segmentLength = GetPolylineLength(centerPolyline);
+        float startCut = GetNodeCutDistance(startNode, segmentLength);
+        float endCut = GetNodeCutDistance(endNode, segmentLength);
+        float startOffset = -(startRoadWidth * 0.5f + sidewalkWidth * 0.5f);
+        float endOffset = -(endRoadWidth * 0.5f + sidewalkWidth * 0.5f);
+        List<Vector3> sidewalkPolyline = BuildTaperedOffsetPolyline(centerPolyline, startOffset, endOffset);
+        ExtendPolylineForSimpleJoints(sidewalkPolyline, startNode, endNode, false);
+        return TrimPolyline(sidewalkPolyline, startCut, endCut);
     }
 
     private List<Vector3> BuildCenterPolyline()
@@ -753,6 +880,28 @@ private void OnDestroy()
     {
         float u = 1f - t;
         return u * u * a + 2f * u * t * b + t * t * c;
+    }
+
+    private float GetNodeVisualRoadWidth(RoadNodeV2 node, float fallbackWidth)
+    {
+        if (node == null)
+            return fallbackWidth;
+
+        if (node.ConnectedSegments == null || node.ConnectedSegments.Count != 2)
+            return Mathf.Max(0.01f, fallbackWidth);
+
+        float bestWidth = fallbackWidth;
+
+        for (int i = 0; i < node.ConnectedSegments.Count; i++)
+        {
+            RoadSegmentV2 segment = node.ConnectedSegments[i];
+            if (segment == null)
+                continue;
+
+            bestWidth = Mathf.Max(bestWidth, segment.TotalRoadWidth);
+        }
+
+        return Mathf.Max(0.01f, bestWidth);
     }
 
     private float GetPolylineLength(List<Vector3> polyline)
@@ -868,6 +1017,419 @@ private void OnDestroy()
         return TrimPolyline(offsetPolyline, startCut, endCut);
     }
 
+    private List<Vector3> BuildTaperedOffsetPolyline(
+        List<Vector3> centerPolyline,
+        float startOffset,
+        float endOffset)
+    {
+        List<Vector3> result = new List<Vector3>();
+
+        if (centerPolyline == null || centerPolyline.Count < 2)
+            return result;
+
+        float totalLength = GetPolylineLength(centerPolyline);
+        if (totalLength < 0.0001f)
+            return result;
+
+        float accumulated = 0f;
+
+        for (int i = 0; i < centerPolyline.Count; i++)
+        {
+            Vector3 tangent;
+
+            if (i == 0)
+                tangent = (centerPolyline[1] - centerPolyline[0]).normalized;
+            else if (i == centerPolyline.Count - 1)
+                tangent = (centerPolyline[i] - centerPolyline[i - 1]).normalized;
+            else
+                tangent = (centerPolyline[i + 1] - centerPolyline[i - 1]).normalized;
+
+            if (tangent.sqrMagnitude < 0.0001f)
+                tangent = Vector3.right;
+
+            Vector3 normal = new Vector3(-tangent.y, tangent.x, 0f);
+            float t = totalLength > 0.0001f
+                ? (i == centerPolyline.Count - 1 ? 1f : Mathf.Clamp01(accumulated / totalLength))
+                : 0f;
+            float offset = Mathf.Lerp(startOffset, endOffset, t);
+            result.Add(centerPolyline[i] + normal * offset);
+
+            if (i < centerPolyline.Count - 1)
+                accumulated += Vector3.Distance(centerPolyline[i], centerPolyline[i + 1]);
+        }
+
+        return result;
+    }
+
+    private List<Vector3> BuildTrimmedTaperedOffsetPolyline(
+        List<Vector3> centerPolyline,
+        float startOffset,
+        float endOffset,
+        float startCut,
+        float endCut)
+    {
+        List<Vector3> offsetPolyline = BuildTaperedOffsetPolyline(centerPolyline, startOffset, endOffset);
+        return TrimPolyline(offsetPolyline, startCut, endCut);
+    }
+
+    private void ExtendPolylineForSimpleJoints(
+        List<Vector3> polyline,
+        RoadNodeV2 polylineStartNode,
+        RoadNodeV2 polylineEndNode,
+        bool isLeftSidewalk)
+    {
+        if (polyline == null || polyline.Count < 2)
+            return;
+
+        float overlap = Mathf.Max(0.05f, sidewalkWidth * 0.25f);
+
+        if (IsSimpleJointNode(polylineStartNode))
+        {
+            if (TryBuildRoundedSidewalkJoint(polylineStartNode, isLeftSidewalk, atStart: true, out List<Vector3> roundedPoints))
+            {
+                polyline.RemoveAt(0);
+
+                for (int i = roundedPoints.Count - 1; i >= 0; i--)
+                    polyline.Insert(0, roundedPoints[i]);
+            }
+            else if (!TrySnapSidewalkJointPoint(polylineStartNode, isLeftSidewalk, out Vector3 snappedPoint))
+            {
+                Vector3 dir = GetPolylineDirectionAtStart(polyline);
+                polyline[0] -= dir * overlap;
+            }
+            else
+            {
+                polyline[0] = snappedPoint;
+            }
+        }
+
+        if (IsSimpleJointNode(polylineEndNode))
+        {
+            if (TryBuildRoundedSidewalkJoint(polylineEndNode, isLeftSidewalk, atStart: false, out List<Vector3> roundedPoints))
+            {
+                polyline.RemoveAt(polyline.Count - 1);
+
+                for (int i = 0; i < roundedPoints.Count; i++)
+                    polyline.Add(roundedPoints[i]);
+            }
+            else if (!TrySnapSidewalkJointPoint(polylineEndNode, isLeftSidewalk, out Vector3 snappedPoint))
+            {
+                Vector3 dir = GetPolylineDirectionAtEnd(polyline);
+                polyline[polyline.Count - 1] += dir * overlap;
+            }
+            else
+            {
+                polyline[polyline.Count - 1] = snappedPoint;
+            }
+        }
+    }
+
+    private bool TryBuildRoundedSidewalkJoint(
+        RoadNodeV2 jointNode,
+        bool isLeftSidewalk,
+        bool atStart,
+        out List<Vector3> roundedPoints)
+    {
+        roundedPoints = new List<Vector3>();
+
+        if (!IsSimpleJointNode(jointNode))
+            return false;
+
+        RoadSegmentV2 otherSegment = null;
+
+        for (int i = 0; i < jointNode.ConnectedSegments.Count; i++)
+        {
+            RoadSegmentV2 candidate = jointNode.ConnectedSegments[i];
+            if (candidate != null && candidate != this)
+            {
+                otherSegment = candidate;
+                break;
+            }
+        }
+
+        if (otherSegment == null)
+            return false;
+
+        if (!TryGetSidewalkLineAtNode(jointNode, isLeftSidewalk, out Vector3 thisPoint, out Vector3 thisDirection))
+            return false;
+
+        if (!otherSegment.TryGetMatchingSidewalkLineAtNode(jointNode, thisPoint, out Vector3 otherPoint, out Vector3 otherDirection))
+            return false;
+
+        float thisRadius = Vector3.Distance(jointNode.transform.position, thisPoint);
+        float otherRadius = Vector3.Distance(jointNode.transform.position, otherPoint);
+        float radius = Mathf.Max(thisRadius, otherRadius);
+        if (radius <= 0.0001f)
+            return false;
+
+        bool hasIntersection = TryGetLineIntersection(thisPoint, thisDirection, otherPoint, otherDirection, out Vector3 intersection);
+        if (hasIntersection)
+        {
+            float intersectionRadius = Vector3.Distance(jointNode.transform.position, intersection);
+            if (intersectionRadius <= radius + sidewalkWidth * 0.35f)
+                return false;
+        }
+
+        Vector3 fromVector = (thisPoint - jointNode.transform.position).normalized;
+        Vector3 toVector = (otherPoint - jointNode.transform.position).normalized;
+
+        if (fromVector.sqrMagnitude < 0.0001f || toVector.sqrMagnitude < 0.0001f)
+            return false;
+
+        float fromAngle = Mathf.Atan2(fromVector.y, fromVector.x) * Mathf.Rad2Deg;
+        float toAngle = Mathf.Atan2(toVector.y, toVector.x) * Mathf.Rad2Deg;
+        float delta = Mathf.DeltaAngle(fromAngle, toAngle);
+
+        if (Mathf.Abs(delta) < 5f)
+            return false;
+
+        float midAngle = fromAngle + delta * 0.5f;
+
+        int arcSteps = Mathf.Clamp(Mathf.RoundToInt(Mathf.Abs(delta) / 12f), 2, 5);
+
+        if (atStart)
+            AddArcPoints(roundedPoints, jointNode.transform.position, radius, midAngle, fromAngle, arcSteps);
+        else
+            AddArcPoints(roundedPoints, jointNode.transform.position, radius, fromAngle, midAngle, arcSteps);
+
+        return roundedPoints.Count >= 2;
+    }
+
+    private bool TrySnapSidewalkJointPoint(
+        RoadNodeV2 jointNode,
+        bool isLeftSidewalk,
+        out Vector3 snappedPoint)
+    {
+        snappedPoint = Vector3.zero;
+
+        if (!IsSimpleJointNode(jointNode))
+            return false;
+
+        RoadSegmentV2 otherSegment = null;
+
+        for (int i = 0; i < jointNode.ConnectedSegments.Count; i++)
+        {
+            RoadSegmentV2 candidate = jointNode.ConnectedSegments[i];
+            if (candidate != null && candidate != this)
+            {
+                otherSegment = candidate;
+                break;
+            }
+        }
+
+        if (otherSegment == null)
+            return false;
+
+        if (!TryGetSidewalkLineAtNode(jointNode, isLeftSidewalk, out Vector3 thisPoint, out Vector3 thisDirection))
+            return false;
+
+        if (!otherSegment.TryGetMatchingSidewalkLineAtNode(jointNode, thisPoint, out Vector3 otherPoint, out Vector3 otherDirection))
+            return false;
+
+        if (!TryGetLineIntersection(thisPoint, thisDirection, otherPoint, otherDirection, out snappedPoint))
+            return false;
+
+        snappedPoint.z = 0f;
+        return true;
+    }
+
+    private bool TryGetMatchingSidewalkLineAtNode(
+        RoadNodeV2 jointNode,
+        Vector3 preferredPoint,
+        out Vector3 point,
+        out Vector3 direction)
+    {
+        point = Vector3.zero;
+        direction = Vector3.zero;
+
+        bool hasLeft = TryGetSidewalkLineAtNode(jointNode, true, out Vector3 leftPoint, out Vector3 leftDir);
+        bool hasRight = TryGetSidewalkLineAtNode(jointNode, false, out Vector3 rightPoint, out Vector3 rightDir);
+
+        if (!hasLeft && !hasRight)
+            return false;
+
+        if (hasLeft && !hasRight)
+        {
+            point = leftPoint;
+            direction = leftDir;
+            return true;
+        }
+
+        if (!hasLeft && hasRight)
+        {
+            point = rightPoint;
+            direction = rightDir;
+            return true;
+        }
+
+        float preferredAngle = GetAngleAroundNode(jointNode, preferredPoint);
+        float leftAngleDelta = Mathf.Abs(Mathf.DeltaAngle(preferredAngle, GetAngleAroundNode(jointNode, leftPoint)));
+        float rightAngleDelta = Mathf.Abs(Mathf.DeltaAngle(preferredAngle, GetAngleAroundNode(jointNode, rightPoint)));
+
+        if (leftAngleDelta < rightAngleDelta - 0.1f)
+        {
+            point = leftPoint;
+            direction = leftDir;
+            return true;
+        }
+
+        if (rightAngleDelta < leftAngleDelta - 0.1f)
+        {
+            point = rightPoint;
+            direction = rightDir;
+            return true;
+        }
+
+        float leftDistance = Vector3.Distance(leftPoint, preferredPoint);
+        float rightDistance = Vector3.Distance(rightPoint, preferredPoint);
+
+        if (leftDistance <= rightDistance)
+        {
+            point = leftPoint;
+            direction = leftDir;
+        }
+        else
+        {
+            point = rightPoint;
+            direction = rightDir;
+        }
+
+        return true;
+    }
+
+    private float GetAngleAroundNode(RoadNodeV2 jointNode, Vector3 sidewalkPoint)
+    {
+        if (jointNode == null)
+            return 0f;
+
+        Vector3 toSidewalk = sidewalkPoint - jointNode.transform.position;
+        toSidewalk.z = 0f;
+
+        if (toSidewalk.sqrMagnitude < 0.0001f)
+            return 0f;
+
+        return Mathf.Atan2(toSidewalk.y, toSidewalk.x) * Mathf.Rad2Deg;
+    }
+
+    private bool TryGetSidewalkLineAtNode(
+        RoadNodeV2 jointNode,
+        bool isLeftSidewalk,
+        out Vector3 point,
+        out Vector3 direction)
+    {
+        point = Vector3.zero;
+        direction = Vector3.zero;
+
+        List<Vector3> polyline = isLeftSidewalk
+            ? BuildSidewalkPolylineForSide(true)
+            : BuildSidewalkPolylineForSide(false);
+
+        if (polyline == null || polyline.Count < 2)
+            return false;
+
+        if (jointNode == startNode)
+        {
+            point = polyline[0];
+            direction = -(polyline[1] - polyline[0]).normalized;
+            return direction.sqrMagnitude > 0.0001f;
+        }
+
+        if (jointNode == endNode)
+        {
+            point = polyline[polyline.Count - 1];
+            direction = (polyline[polyline.Count - 1] - polyline[polyline.Count - 2]).normalized;
+            return direction.sqrMagnitude > 0.0001f;
+        }
+
+        return false;
+    }
+
+    private List<Vector3> BuildSidewalkPolylineForSide(bool isLeftSidewalk)
+    {
+        if (isLeftSidewalk && !HasLeftSidewalk)
+            return new List<Vector3>();
+
+        if (!isLeftSidewalk && !HasRightSidewalk)
+            return new List<Vector3>();
+
+        List<Vector3> centerPolyline = BuildCenterPolyline();
+        float startRoadWidth = GetNodeVisualRoadWidth(startNode, TotalRoadWidth);
+        float endRoadWidth = GetNodeVisualRoadWidth(endNode, TotalRoadWidth);
+
+        float startOffset = isLeftSidewalk
+            ? startRoadWidth * 0.5f + sidewalkWidth * 0.5f
+            : -(startRoadWidth * 0.5f + sidewalkWidth * 0.5f);
+
+        float endOffset = isLeftSidewalk
+            ? endRoadWidth * 0.5f + sidewalkWidth * 0.5f
+            : -(endRoadWidth * 0.5f + sidewalkWidth * 0.5f);
+
+        return BuildTaperedOffsetPolyline(centerPolyline, startOffset, endOffset);
+    }
+
+    private bool TryGetLineIntersection(
+        Vector3 pointA,
+        Vector3 dirA,
+        Vector3 pointB,
+        Vector3 dirB,
+        out Vector3 intersection)
+    {
+        intersection = Vector3.zero;
+
+        Vector2 p = new Vector2(pointA.x, pointA.y);
+        Vector2 r = new Vector2(dirA.x, dirA.y);
+        Vector2 q = new Vector2(pointB.x, pointB.y);
+        Vector2 s = new Vector2(dirB.x, dirB.y);
+
+        float cross = r.x * s.y - r.y * s.x;
+        if (Mathf.Abs(cross) <= 0.0001f)
+            return false;
+
+        Vector2 qp = q - p;
+        float t = (qp.x * s.y - qp.y * s.x) / cross;
+        Vector2 hit = p + r * t;
+
+        intersection = new Vector3(hit.x, hit.y, 0f);
+        return true;
+    }
+
+    private void AddArcPoints(
+        List<Vector3> points,
+        Vector3 center,
+        float radius,
+        float fromAngle,
+        float toAngle,
+        int steps)
+    {
+        if (points == null)
+            return;
+
+        float delta = Mathf.DeltaAngle(fromAngle, toAngle);
+        int count = Mathf.Max(1, steps);
+
+        for (int i = 0; i <= count; i++)
+        {
+            float t = i / (float)count;
+            float angle = fromAngle + delta * t;
+            Vector3 point = center + AngleToDirection(angle) * radius;
+            point.z = 0f;
+
+            if (points.Count == 0 || Vector3.Distance(points[points.Count - 1], point) > 0.01f)
+                points.Add(point);
+        }
+    }
+
+    private Vector3 AngleToDirection(float angleDegrees)
+    {
+        float angleRadians = angleDegrees * Mathf.Deg2Rad;
+        return new Vector3(Mathf.Cos(angleRadians), Mathf.Sin(angleRadians), 0f);
+    }
+
+    private bool IsSimpleJointNode(RoadNodeV2 node)
+    {
+        return node != null && node.ConnectedSegments != null && node.ConnectedSegments.Count == 2;
+    }
+
     private Vector3 GetPolylineDirectionAtStart(List<Vector3> polyline)
     {
         if (polyline == null || polyline.Count < 2)
@@ -910,10 +1472,15 @@ private void OnDestroy()
             return;
         }
 
+        float startRoadWidth = GetNodeVisualRoadWidth(startNode, TotalRoadWidth);
+        float endRoadWidth = GetNodeVisualRoadWidth(endNode, TotalRoadWidth);
+
         if (leftSidewalk)
         {
-            float offset = TotalRoadWidth * 0.5f + sidewalkOffset + sidewalkWidth * 0.5f;
-            List<Vector3> leftPolyline = BuildOffsetPolyline(centerPolyline, offset);
+            float startOffset = startRoadWidth * 0.5f + sidewalkWidth * 0.5f;
+            float endOffset = endRoadWidth * 0.5f + sidewalkWidth * 0.5f;
+            List<Vector3> leftPolyline = BuildTaperedOffsetPolyline(centerPolyline, startOffset, endOffset);
+            ExtendPolylineForSimpleJoints(leftPolyline, startNode, endNode, true);
             ApplySidewalkPolyline(leftSidewalkRenderer, leftPolyline, "Sidewalk_Left");
         }
         else if (leftSidewalkRenderer != null)
@@ -923,8 +1490,10 @@ private void OnDestroy()
 
         if (rightSidewalk)
         {
-            float offset = -(TotalRoadWidth * 0.5f + sidewalkOffset + sidewalkWidth * 0.5f);
-            List<Vector3> rightPolyline = BuildOffsetPolyline(centerPolyline, offset);
+            float startOffset = -(startRoadWidth * 0.5f + sidewalkWidth * 0.5f);
+            float endOffset = -(endRoadWidth * 0.5f + sidewalkWidth * 0.5f);
+            List<Vector3> rightPolyline = BuildTaperedOffsetPolyline(centerPolyline, startOffset, endOffset);
+            ExtendPolylineForSimpleJoints(rightPolyline, startNode, endNode, false);
             ApplySidewalkPolyline(rightSidewalkRenderer, rightPolyline, "Sidewalk_Right");
         }
         else if (rightSidewalkRenderer != null)
@@ -1009,7 +1578,7 @@ private void OnDestroy()
 
         renderer.sharedMaterial = cachedMaterial;
         renderer.useWorldSpace = true;
-        renderer.numCapVertices = 0;
+        renderer.numCapVertices = 4;
         renderer.numCornerVertices = 2;
         renderer.textureMode = LineTextureMode.Stretch;
         renderer.alignment = LineAlignment.TransformZ;
@@ -1143,7 +1712,7 @@ private void OnDestroy()
 
         renderer.sharedMaterial = cachedMaterial;
         renderer.useWorldSpace = true;
-        renderer.numCapVertices = 0;
+        renderer.numCapVertices = 4;
         renderer.numCornerVertices = 0;
         renderer.textureMode = LineTextureMode.Stretch;
         renderer.alignment = LineAlignment.TransformZ;
@@ -1166,8 +1735,8 @@ private void OnDestroy()
 
         roadRenderer.sharedMaterial = cachedMaterial;
         roadRenderer.useWorldSpace = true;
-        roadRenderer.numCapVertices = 0;
-        roadRenderer.numCornerVertices = 0;
+        roadRenderer.numCapVertices = 6;
+        roadRenderer.numCornerVertices = 2;
         roadRenderer.textureMode = LineTextureMode.Stretch;
         roadRenderer.alignment = LineAlignment.TransformZ;
         roadRenderer.sortingOrder = 5;

@@ -316,6 +316,10 @@ public static class RoadPathfinderV2
                 cost += 1f;
                 break;
 
+            case RoadLaneConnectionV2.MovementType.UTurn:
+                cost += 4f;
+                break;
+
             case RoadLaneConnectionV2.MovementType.Straight:
                 cost += 0f;
                 break;
@@ -364,6 +368,9 @@ public static class RoadPathfinderV2
 
         if (absAngle < 20f)
             return RoadLaneConnectionV2.MovementType.Straight;
+
+        if (absAngle >= 140f)
+            return RoadLaneConnectionV2.MovementType.UTurn;
 
         return angle > 0f
             ? RoadLaneConnectionV2.MovementType.Left

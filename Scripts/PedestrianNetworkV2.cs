@@ -11,8 +11,11 @@ public class PedestrianNetworkV2 : MonoBehaviour
         public Vector3 position;
         public bool isParkingAnchor;
         public bool isDestinationAnchor;
+        public bool isBuildingAnchor;
+        public bool isCrosswalkHub;
         public ParkingSpotV2 parkingSpot;
         public DestinationPointV2 destinationPoint;
+        public BuildingZoneV2 buildingZone;
     }
 
     [System.Serializable]
@@ -25,12 +28,19 @@ public class PedestrianNetworkV2 : MonoBehaviour
         public List<Vector3> polyline = new List<Vector3>();
     }
 
+    private class IntersectionCornerCandidate
+    {
+        public PedestrianNodeDataV2 node;
+        public RoadSegmentV2 segment;
+    }
+
     [Header("Sources")]
     [SerializeField] private RoadNetworkV2 roadNetwork;
 
     [Header("Build settings")]
     [SerializeField] private float nodeMergeDistance = 0.2f;
-    [SerializeField] private float sidewalkLinkDistance = 0.75f;
+    [SerializeField] private float crosswalkInset = 0.08f;
+    [SerializeField] private float intersectionCornerLinkDistance = 0.7f;
     [SerializeField] private float parkingAnchorLinkDistance = 1.5f;
     [SerializeField] private float destinationAnchorLinkDistance = 2.0f;
     [SerializeField] private float offroadPenaltyMultiplier = 1.75f;
@@ -65,8 +75,10 @@ public class PedestrianNetworkV2 : MonoBehaviour
 
         BuildFromRoadSidewalks();
         BuildFromPedestrianPaths();
+        BuildIntersectionCrosswalks();
         BuildParkingAnchors();
         BuildDestinationAnchors();
+        BuildBuildingAnchors();
         RebuildAdjacency();
     }
 
@@ -126,13 +138,41 @@ public class PedestrianNetworkV2 : MonoBehaviour
 
     public List<Vector3> FindPath(Vector3 startPosition, Vector3 endPosition)
     {
-        PedestrianNodeDataV2 startNode = GetNearestNode(startPosition, destinationAnchorLinkDistance);
-        PedestrianNodeDataV2 endNode = GetNearestNode(endPosition, destinationAnchorLinkDistance);
+        List<PedestrianNodeDataV2> startCandidates = GetNearbyNodes(startPosition, destinationAnchorLinkDistance, 6);
+        List<PedestrianNodeDataV2> endCandidates = GetNearbyNodes(endPosition, destinationAnchorLinkDistance, 6);
 
-        if (startNode == null || endNode == null)
+        if (startCandidates.Count == 0 || endCandidates.Count == 0)
             return new List<Vector3>();
 
-        return FindPath(startNode.id, endNode.id);
+        List<Vector3> bestPath = new List<Vector3>();
+        float bestCost = float.MaxValue;
+
+        for (int i = 0; i < startCandidates.Count; i++)
+        {
+            PedestrianNodeDataV2 startNode = startCandidates[i];
+            if (startNode == null)
+                continue;
+
+            for (int j = 0; j < endCandidates.Count; j++)
+            {
+                PedestrianNodeDataV2 endNode = endCandidates[j];
+                if (endNode == null)
+                    continue;
+
+                List<Vector3> path = FindPath(startNode.id, endNode.id);
+                if (path == null || path.Count < 2)
+                    continue;
+
+                float cost = GetPolylineLength(path);
+                if (cost >= bestCost)
+                    continue;
+
+                bestCost = cost;
+                bestPath = path;
+            }
+        }
+
+        return bestPath;
     }
 
     public List<Vector3> FindPath(ParkingSpotV2 startParking, DestinationPointV2 destination)
@@ -144,6 +184,24 @@ public class PedestrianNetworkV2 : MonoBehaviour
             return new List<Vector3>();
 
         return FindPath(startNode.id, endNode.id);
+    }
+
+    public List<Vector3> FindPath(Vector3 startPosition, ParkingSpotV2 parkingSpot)
+    {
+        PedestrianNodeDataV2 endNode = GetNodeForParkingSpot(parkingSpot);
+        if (endNode == null)
+            return new List<Vector3>();
+
+        return FindPathToNode(startPosition, endNode.id, parkingAnchorLinkDistance);
+    }
+
+    public List<Vector3> FindPath(Vector3 startPosition, DestinationPointV2 destination)
+    {
+        PedestrianNodeDataV2 endNode = GetNodeForDestination(destination);
+        if (endNode == null)
+            return new List<Vector3>();
+
+        return FindPathToNode(startPosition, endNode.id, destinationAnchorLinkDistance);
     }
 
     public List<Vector3> FindPath(int startNodeId, int endNodeId)
@@ -285,6 +343,53 @@ public class PedestrianNetworkV2 : MonoBehaviour
         }
     }
 
+    private void BuildIntersectionCrosswalks()
+    {
+        RoadNodeV2[] roadNodes = FindObjectsByType<RoadNodeV2>(FindObjectsSortMode.None);
+
+        for (int i = 0; i < roadNodes.Length; i++)
+        {
+            RoadNodeV2 roadNode = roadNodes[i];
+            if (roadNode == null || !roadNode.IsIntersection)
+                continue;
+
+            List<IntersectionCornerCandidate> cornerCandidates = new List<IntersectionCornerCandidate>();
+
+            for (int j = 0; j < roadNode.ConnectedSegments.Count; j++)
+            {
+                RoadSegmentV2 segment = roadNode.ConnectedSegments[j];
+                if (segment == null)
+                    continue;
+
+                if (!TryGetCrosswalkEndpoints(
+                    segment,
+                    roadNode,
+                    out Vector3 rawLeftExit,
+                    out Vector3 rawRightExit,
+                    out Vector3 leftExit,
+                    out Vector3 rightExit))
+                    continue;
+
+                PedestrianNodeDataV2 rawLeftNode = GetOrCreateNode(rawLeftExit);
+                PedestrianNodeDataV2 rawRightNode = GetOrCreateNode(rawRightExit);
+                PedestrianNodeDataV2 leftNode = GetOrCreateNode(leftExit);
+                PedestrianNodeDataV2 rightNode = GetOrCreateNode(rightExit);
+
+                cornerCandidates.Add(new IntersectionCornerCandidate { node = leftNode, segment = segment });
+                cornerCandidates.Add(new IntersectionCornerCandidate { node = rightNode, segment = segment });
+
+                AddSingleDirectionEdge(rawLeftNode, leftNode, false);
+                AddSingleDirectionEdge(rawRightNode, rightNode, false);
+
+                List<Vector3> crosswalkPolyline = new List<Vector3> { leftNode.position, rightNode.position };
+                float cost = Vector3.Distance(leftNode.position, rightNode.position);
+                AddBidirectionalEdge(leftNode.id, rightNode.id, crosswalkPolyline, cost, false);
+            }
+
+            ConnectIntersectionCornerLoop(roadNode, cornerCandidates);
+        }
+    }
+
     private void BuildFromPedestrianPaths()
     {
         PedestrianPathV2[] paths = FindObjectsByType<PedestrianPathV2>(FindObjectsSortMode.None);
@@ -328,11 +433,32 @@ public class PedestrianNetworkV2 : MonoBehaviour
             if (destination == null)
                 continue;
 
-            PedestrianNodeDataV2 node = GetOrCreateNode(destination.Position);
+            PedestrianNodeDataV2 node = CreateStrictNode(destination.Position);
             node.isDestinationAnchor = true;
             node.destinationPoint = destination;
 
-            LinkNodeToNearestSidewalk(node, destinationAnchorLinkDistance, true);
+            if (!LinkNodeToNearestWalkableEdge(node, float.MaxValue, true, true))
+                LinkNodeToNearestSidewalk(node, float.MaxValue, true);
+        }
+    }
+
+    private void BuildBuildingAnchors()
+    {
+        BuildingZoneV2[] buildings = FindObjectsByType<BuildingZoneV2>(FindObjectsSortMode.None);
+
+        for (int i = 0; i < buildings.Length; i++)
+        {
+            BuildingZoneV2 building = buildings[i];
+            if (building == null)
+                continue;
+
+            Vector3 entrancePoint = GetBestBuildingEntrancePoint(building);
+            PedestrianNodeDataV2 node = CreateStrictNode(entrancePoint);
+            node.isBuildingAnchor = true;
+            node.buildingZone = building;
+
+            if (!LinkNodeToNearestWalkableEdge(node, float.MaxValue, true, true))
+                LinkNodeToNearestSidewalk(node, float.MaxValue, true);
         }
     }
 
@@ -364,44 +490,12 @@ public class PedestrianNetworkV2 : MonoBehaviour
 
             AddBidirectionalEdge(a.id, b.id, edgePolyline, cost, isOffroad);
         }
-
-        LinkConsecutiveNearbyNodes(polyline);
     }
 
-    private void LinkConsecutiveNearbyNodes(List<Vector3> polyline)
-    {
-        if (polyline == null || polyline.Count == 0)
-            return;
-
-        for (int i = 0; i < nodes.Count; i++)
-        {
-            PedestrianNodeDataV2 a = nodes[i];
-            if (a == null)
-                continue;
-
-            for (int j = i + 1; j < nodes.Count; j++)
-            {
-                PedestrianNodeDataV2 b = nodes[j];
-                if (b == null)
-                    continue;
-
-                float d = Vector3.Distance(a.position, b.position);
-                if (d <= sidewalkLinkDistance)
-                {
-                    if (GetEdge(a.id, b.id) != null)
-                        continue;
-
-                    List<Vector3> poly = new List<Vector3> { a.position, b.position };
-                    AddBidirectionalEdge(a.id, b.id, poly, d, false);
-                }
-            }
-        }
-    }
-
-    private void LinkNodeToNearestSidewalk(PedestrianNodeDataV2 node, float maxDistance, bool isOffroad)
+    private bool LinkNodeToNearestSidewalk(PedestrianNodeDataV2 node, float maxDistance, bool isOffroad)
     {
         if (node == null)
-            return;
+            return false;
 
         PedestrianNodeDataV2 best = null;
         float bestDistance = maxDistance;
@@ -412,7 +506,10 @@ public class PedestrianNetworkV2 : MonoBehaviour
             if (candidate == null || candidate.id == node.id)
                 continue;
 
-            if (candidate.isParkingAnchor || candidate.isDestinationAnchor)
+            if (candidate.isParkingAnchor || candidate.isDestinationAnchor || candidate.isBuildingAnchor)
+                continue;
+
+            if (candidate.isCrosswalkHub)
                 continue;
 
             float d = Vector3.Distance(node.position, candidate.position);
@@ -424,7 +521,7 @@ public class PedestrianNetworkV2 : MonoBehaviour
         }
 
         if (best == null)
-            return;
+            return false;
 
         List<Vector3> polyline = new List<Vector3> { node.position, best.position };
         float cost = bestDistance;
@@ -432,6 +529,309 @@ public class PedestrianNetworkV2 : MonoBehaviour
             cost *= offroadPenaltyMultiplier;
 
         AddBidirectionalEdge(node.id, best.id, polyline, cost, isOffroad);
+        return true;
+    }
+
+    private bool LinkNodeToNearestWalkableEdge(
+        PedestrianNodeDataV2 node,
+        float maxDistance,
+        bool isOffroad,
+        bool allowCrosswalkHubs)
+    {
+        if (node == null)
+            return false;
+
+        PedestrianEdgeDataV2 bestEdge = null;
+        PedestrianNodeDataV2 bestA = null;
+        PedestrianNodeDataV2 bestB = null;
+        Vector3 bestPoint = Vector3.zero;
+        float bestDistance = maxDistance;
+
+        for (int i = 0; i < edges.Count; i++)
+        {
+            PedestrianEdgeDataV2 edge = edges[i];
+            if (edge == null || edge.polyline == null || edge.polyline.Count < 2)
+                continue;
+
+            if (edge.isOffroad)
+                continue;
+
+            PedestrianNodeDataV2 edgeFrom = GetNodeById(edge.fromNodeId);
+            PedestrianNodeDataV2 edgeTo = GetNodeById(edge.toNodeId);
+            if (edgeFrom == null || edgeTo == null)
+                continue;
+
+            if (edgeFrom.isParkingAnchor || edgeFrom.isDestinationAnchor || edgeFrom.isBuildingAnchor)
+                continue;
+
+            if (edgeFrom.isCrosswalkHub && !allowCrosswalkHubs)
+                continue;
+
+            if (edgeTo.isParkingAnchor || edgeTo.isDestinationAnchor || edgeTo.isBuildingAnchor)
+                continue;
+
+            if (edgeTo.isCrosswalkHub && !allowCrosswalkHubs)
+                continue;
+
+            for (int j = 0; j < edge.polyline.Count - 1; j++)
+            {
+                Vector3 segmentA = edge.polyline[j];
+                Vector3 segmentB = edge.polyline[j + 1];
+                Vector3 projected = ClosestPointOnSegment(node.position, segmentA, segmentB);
+                float distance = Vector3.Distance(node.position, projected);
+                if (distance > bestDistance)
+                    continue;
+
+                bestDistance = distance;
+                bestEdge = edge;
+                bestA = GetOrCreateNode(segmentA);
+                bestB = GetOrCreateNode(segmentB);
+                bestPoint = projected;
+            }
+        }
+
+        if (bestEdge == null || bestA == null || bestB == null)
+            return false;
+
+        PedestrianNodeDataV2 projectedNode = CreateProjectedNode(bestPoint);
+
+        List<Vector3> anchorPolyline = new List<Vector3> { node.position, projectedNode.position };
+        float anchorCost = Vector3.Distance(node.position, projectedNode.position);
+        if (isOffroad)
+            anchorCost *= offroadPenaltyMultiplier;
+        AddBidirectionalEdge(node.id, projectedNode.id, anchorPolyline, anchorCost, isOffroad);
+
+        List<Vector3> firstHalfPolyline = new List<Vector3> { projectedNode.position, bestA.position };
+        float firstHalfCost = Vector3.Distance(projectedNode.position, bestA.position);
+        AddBidirectionalEdge(projectedNode.id, bestA.id, firstHalfPolyline, firstHalfCost, false);
+
+        List<Vector3> secondHalfPolyline = new List<Vector3> { projectedNode.position, bestB.position };
+        float secondHalfCost = Vector3.Distance(projectedNode.position, bestB.position);
+        AddBidirectionalEdge(projectedNode.id, bestB.id, secondHalfPolyline, secondHalfCost, false);
+
+        return true;
+    }
+
+    private void ConnectIntersectionCornerLoop(
+        RoadNodeV2 roadNode,
+        List<IntersectionCornerCandidate> cornerCandidates)
+    {
+        if (roadNode == null || cornerCandidates == null || cornerCandidates.Count < 2)
+            return;
+
+        Vector3 center = roadNode.transform.position;
+        List<RoadSegmentV2> orderedSegments = new List<RoadSegmentV2>();
+
+        for (int i = 0; i < cornerCandidates.Count; i++)
+        {
+            IntersectionCornerCandidate candidate = cornerCandidates[i];
+            if (candidate == null || candidate.segment == null)
+                continue;
+
+            if (!orderedSegments.Contains(candidate.segment))
+                orderedSegments.Add(candidate.segment);
+        }
+
+        orderedSegments.Sort((a, b) =>
+        {
+            Vector3 dirA = GetArmDirection(a, roadNode);
+            Vector3 dirB = GetArmDirection(b, roadNode);
+            float angleA = Mathf.Atan2(dirA.y, dirA.x);
+            float angleB = Mathf.Atan2(dirB.y, dirB.x);
+            return angleA.CompareTo(angleB);
+        });
+
+        for (int i = 0; i < orderedSegments.Count; i++)
+        {
+            RoadSegmentV2 currentSegment = orderedSegments[i];
+            RoadSegmentV2 nextSegment = orderedSegments[(i + 1) % orderedSegments.Count];
+
+            if (currentSegment == null || nextSegment == null || currentSegment == nextSegment)
+                continue;
+
+            if (!TryGetNearestCornerPair(cornerCandidates, currentSegment, nextSegment, out PedestrianNodeDataV2 currentNode, out PedestrianNodeDataV2 nextNode))
+                continue;
+
+            float distance = Vector3.Distance(currentNode.position, nextNode.position);
+            float maxCornerDistance = GetMaxCornerConnectionDistance(roadNode, currentSegment, nextSegment);
+            if (distance > maxCornerDistance)
+                continue;
+
+            List<Vector3> polyline = new List<Vector3> { currentNode.position, nextNode.position };
+            AddBidirectionalEdge(currentNode.id, nextNode.id, polyline, distance, false);
+        }
+    }
+
+    private bool TryGetNearestCornerPair(
+        List<IntersectionCornerCandidate> cornerCandidates,
+        RoadSegmentV2 firstSegment,
+        RoadSegmentV2 secondSegment,
+        out PedestrianNodeDataV2 firstNode,
+        out PedestrianNodeDataV2 secondNode)
+    {
+        firstNode = null;
+        secondNode = null;
+
+        if (cornerCandidates == null || firstSegment == null || secondSegment == null)
+            return false;
+
+        float bestDistance = float.MaxValue;
+
+        for (int i = 0; i < cornerCandidates.Count; i++)
+        {
+            IntersectionCornerCandidate firstCandidate = cornerCandidates[i];
+            if (firstCandidate == null || firstCandidate.segment != firstSegment || firstCandidate.node == null)
+                continue;
+
+            for (int j = 0; j < cornerCandidates.Count; j++)
+            {
+                IntersectionCornerCandidate secondCandidate = cornerCandidates[j];
+                if (secondCandidate == null || secondCandidate.segment != secondSegment || secondCandidate.node == null)
+                    continue;
+
+                float distance = Vector3.Distance(firstCandidate.node.position, secondCandidate.node.position);
+                if (distance >= bestDistance)
+                    continue;
+
+                bestDistance = distance;
+                firstNode = firstCandidate.node;
+                secondNode = secondCandidate.node;
+            }
+        }
+
+        return firstNode != null && secondNode != null;
+    }
+
+    private float GetMaxCornerConnectionDistance(
+        RoadNodeV2 roadNode,
+        RoadSegmentV2 firstSegment,
+        RoadSegmentV2 secondSegment)
+    {
+        float baseDistance = Mathf.Max(0.5f, intersectionCornerLinkDistance);
+
+        if (roadNode == null)
+            return baseDistance;
+
+        float maxRoadHalfWidth = 0f;
+
+        if (firstSegment != null)
+            maxRoadHalfWidth = Mathf.Max(maxRoadHalfWidth, firstSegment.TotalRoadWidth * 0.5f + firstSegment.SidewalkWidth);
+
+        if (secondSegment != null)
+            maxRoadHalfWidth = Mathf.Max(maxRoadHalfWidth, secondSegment.TotalRoadWidth * 0.5f + secondSegment.SidewalkWidth);
+
+        for (int i = 0; i < roadNode.ConnectedSegments.Count; i++)
+        {
+            RoadSegmentV2 segment = roadNode.ConnectedSegments[i];
+            if (segment == null)
+                continue;
+
+            maxRoadHalfWidth = Mathf.Max(maxRoadHalfWidth, segment.TotalRoadWidth * 0.5f + segment.SidewalkWidth);
+        }
+
+        return Mathf.Max(baseDistance, maxRoadHalfWidth * 2.5f);
+    }
+
+    private Vector3 ClosestPointOnSegment(Vector3 point, Vector3 a, Vector3 b)
+    {
+        Vector3 ab = b - a;
+        float abSqr = Vector3.SqrMagnitude(ab);
+        if (abSqr <= 0.000001f)
+            return a;
+
+        float t = Vector3.Dot(point - a, ab) / abSqr;
+        t = Mathf.Clamp01(t);
+        return a + ab * t;
+    }
+
+    private PedestrianNodeDataV2 CreateProjectedNode(Vector3 position)
+    {
+        position.z = 0f;
+
+        PedestrianNodeDataV2 created = new PedestrianNodeDataV2
+        {
+            id = nextNodeId++,
+            position = position
+        };
+
+        nodes.Add(created);
+        return created;
+    }
+
+    private bool TryGetCrosswalkEndpoints(
+        RoadSegmentV2 segment,
+        RoadNodeV2 intersectionNode,
+        out Vector3 rawLeftExit,
+        out Vector3 rawRightExit,
+        out Vector3 leftExit,
+        out Vector3 rightExit)
+    {
+        rawLeftExit = Vector3.zero;
+        rawRightExit = Vector3.zero;
+        leftExit = Vector3.zero;
+        rightExit = Vector3.zero;
+
+        if (segment == null || intersectionNode == null)
+            return false;
+
+        List<Vector3> leftPolyline = segment.GetLeftSidewalkPolylineWorld();
+        List<Vector3> rightPolyline = segment.GetRightSidewalkPolylineWorld();
+
+        if (leftPolyline == null || rightPolyline == null || leftPolyline.Count < 2 || rightPolyline.Count < 2)
+            return false;
+
+        bool useStart = segment.StartNode == intersectionNode;
+        bool useEnd = segment.EndNode == intersectionNode;
+        if (!useStart && !useEnd)
+            return false;
+
+        rawLeftExit = useStart ? leftPolyline[0] : leftPolyline[leftPolyline.Count - 1];
+        rawRightExit = useStart ? rightPolyline[0] : rightPolyline[rightPolyline.Count - 1];
+
+        leftExit = rawLeftExit;
+        rightExit = rawRightExit;
+
+        Vector3 armDirection = GetArmDirection(segment, intersectionNode);
+        if (armDirection.sqrMagnitude > 0.0001f)
+        {
+            float inset = Mathf.Max(0.04f, segment.JunctionInset * 0.9f + crosswalkInset);
+            Vector3 shift = -armDirection.normalized * inset;
+            leftExit += shift;
+            rightExit += shift;
+        }
+
+        leftExit.z = 0f;
+        rightExit.z = 0f;
+        return true;
+    }
+
+    private void AddSingleDirectionEdge(PedestrianNodeDataV2 from, PedestrianNodeDataV2 to, bool isOffroad)
+    {
+        if (from == null || to == null || from.id == to.id)
+            return;
+
+        List<Vector3> polyline = new List<Vector3> { from.position, to.position };
+        float cost = Vector3.Distance(from.position, to.position);
+        if (isOffroad)
+            cost *= offroadPenaltyMultiplier;
+
+        AddBidirectionalEdge(from.id, to.id, polyline, cost, isOffroad);
+    }
+
+    private Vector3 GetArmDirection(RoadSegmentV2 segment, RoadNodeV2 intersectionNode)
+    {
+        if (segment == null || intersectionNode == null)
+            return Vector3.zero;
+
+        Vector3 direction = Vector3.zero;
+
+        if (segment.StartNode == intersectionNode && segment.EndNode != null)
+            direction = segment.EndNode.transform.position - intersectionNode.transform.position;
+        else if (segment.EndNode == intersectionNode && segment.StartNode != null)
+            direction = segment.StartNode.transform.position - intersectionNode.transform.position;
+
+        direction.z = 0f;
+        return direction.normalized;
     }
 
     private PedestrianNodeDataV2 GetOrCreateNode(Vector3 position)
@@ -456,6 +856,268 @@ public class PedestrianNetworkV2 : MonoBehaviour
 
         nodes.Add(created);
         return created;
+    }
+
+    private PedestrianNodeDataV2 CreateStrictNode(Vector3 position)
+    {
+        position.z = 0f;
+
+        PedestrianNodeDataV2 created = new PedestrianNodeDataV2
+        {
+            id = nextNodeId++,
+            position = position
+        };
+
+        nodes.Add(created);
+        return created;
+    }
+
+    private List<PedestrianNodeDataV2> GetNearbyNodes(Vector3 position, float maxDistance, int maxCount)
+    {
+        List<PedestrianNodeDataV2> result = new List<PedestrianNodeDataV2>();
+
+        for (int i = 0; i < nodes.Count; i++)
+        {
+            PedestrianNodeDataV2 node = nodes[i];
+            if (node == null)
+                continue;
+
+            float distance = Vector3.Distance(position, node.position);
+            if (distance > maxDistance)
+                continue;
+
+            result.Add(node);
+        }
+
+        result.Sort((a, b) =>
+        {
+            float da = Vector3.Distance(position, a.position);
+            float db = Vector3.Distance(position, b.position);
+            return da.CompareTo(db);
+        });
+
+        if (result.Count > maxCount)
+            result.RemoveRange(maxCount, result.Count - maxCount);
+
+        return result;
+    }
+
+    private List<Vector3> FindPathToNode(Vector3 startPosition, int endNodeId, float startSearchRadius)
+    {
+        List<Vector3> attachedPath = BuildPathFromWorldAttachment(startPosition, endNodeId, startSearchRadius);
+        if (attachedPath.Count > 0)
+            return attachedPath;
+
+        return FindPathToNodeByNearbyNodes(startPosition, endNodeId, startSearchRadius);
+    }
+
+    private List<Vector3> BuildPathFromWorldAttachment(Vector3 startPosition, int endNodeId, float startSearchRadius)
+    {
+        List<Vector3> bestPath = new List<Vector3>();
+        float bestCost = float.MaxValue;
+
+        float[] searchRadii = new float[]
+        {
+            Mathf.Max(0.5f, startSearchRadius),
+            Mathf.Max(1.0f, startSearchRadius * 2f),
+            Mathf.Max(1.5f, startSearchRadius * 3f),
+            Mathf.Max(2.0f, startSearchRadius * 4f),
+            float.MaxValue
+        };
+
+        for (int radiusIndex = 0; radiusIndex < searchRadii.Length; radiusIndex++)
+        {
+            if (!TryFindNearestWalkableAttachment(
+                startPosition,
+                searchRadii[radiusIndex],
+                true,
+                out Vector3 projectedPoint,
+                out PedestrianNodeDataV2 edgeStart,
+                out PedestrianNodeDataV2 edgeEnd,
+                out float attachmentDistance))
+            {
+                continue;
+            }
+
+            PedestrianNodeDataV2[] attachmentNodes = new PedestrianNodeDataV2[] { edgeStart, edgeEnd };
+
+            for (int i = 0; i < attachmentNodes.Length; i++)
+            {
+                PedestrianNodeDataV2 startNode = attachmentNodes[i];
+                if (startNode == null)
+                    continue;
+
+                List<Vector3> path = FindPath(startNode.id, endNodeId);
+                if (path == null || path.Count == 0)
+                    continue;
+
+                List<Vector3> candidatePath = new List<Vector3>();
+                AddPointIfFar(candidatePath, projectedPoint);
+                AddPointIfFar(candidatePath, startNode.position);
+
+                for (int j = 1; j < path.Count; j++)
+                    AddPointIfFar(candidatePath, path[j]);
+
+                float cost =
+                    attachmentDistance * offroadPenaltyMultiplier +
+                    Vector3.Distance(projectedPoint, startNode.position) +
+                    GetPolylineLength(path);
+
+                if (cost >= bestCost)
+                    continue;
+
+                bestCost = cost;
+                bestPath = candidatePath;
+            }
+
+            if (bestPath.Count > 0)
+                break;
+        }
+
+        return bestPath;
+    }
+
+    private List<Vector3> FindPathToNodeByNearbyNodes(Vector3 startPosition, int endNodeId, float startSearchRadius)
+    {
+        List<Vector3> bestPath = new List<Vector3>();
+        float bestCost = float.MaxValue;
+
+        float[] searchRadii = new float[]
+        {
+            Mathf.Max(0.5f, startSearchRadius),
+            Mathf.Max(1.0f, startSearchRadius * 2f),
+            Mathf.Max(1.5f, startSearchRadius * 3f),
+            Mathf.Max(2.0f, startSearchRadius * 4f),
+            float.MaxValue
+        };
+
+        for (int radiusIndex = 0; radiusIndex < searchRadii.Length; radiusIndex++)
+        {
+            List<PedestrianNodeDataV2> startCandidates = GetNearbyNodes(startPosition, searchRadii[radiusIndex], 6);
+            if (startCandidates.Count == 0)
+                continue;
+
+            for (int i = 0; i < startCandidates.Count; i++)
+            {
+                PedestrianNodeDataV2 startNode = startCandidates[i];
+                if (startNode == null)
+                    continue;
+
+                List<Vector3> path = FindPath(startNode.id, endNodeId);
+                if (path == null || path.Count < 2)
+                    continue;
+
+                float cost = Vector3.Distance(startPosition, startNode.position) * offroadPenaltyMultiplier + GetPolylineLength(path);
+                if (cost >= bestCost)
+                    continue;
+
+                bestCost = cost;
+                bestPath = path;
+            }
+
+            if (bestPath.Count > 0)
+                break;
+        }
+
+        return bestPath;
+    }
+
+    private bool TryFindNearestWalkableAttachment(
+        Vector3 position,
+        float maxDistance,
+        bool allowCrosswalkHubs,
+        out Vector3 projectedPoint,
+        out PedestrianNodeDataV2 edgeStart,
+        out PedestrianNodeDataV2 edgeEnd,
+        out float distance)
+    {
+        projectedPoint = Vector3.zero;
+        edgeStart = null;
+        edgeEnd = null;
+        distance = maxDistance;
+
+        for (int i = 0; i < edges.Count; i++)
+        {
+            PedestrianEdgeDataV2 edge = edges[i];
+            if (edge == null || edge.polyline == null || edge.polyline.Count < 2)
+                continue;
+
+            if (edge.isOffroad)
+                continue;
+
+            PedestrianNodeDataV2 fromNode = GetNodeById(edge.fromNodeId);
+            PedestrianNodeDataV2 toNode = GetNodeById(edge.toNodeId);
+            if (fromNode == null || toNode == null)
+                continue;
+
+            if (fromNode.isParkingAnchor || fromNode.isDestinationAnchor || fromNode.isBuildingAnchor)
+                continue;
+
+            if (toNode.isParkingAnchor || toNode.isDestinationAnchor || toNode.isBuildingAnchor)
+                continue;
+
+            if (!allowCrosswalkHubs && (fromNode.isCrosswalkHub || toNode.isCrosswalkHub))
+                continue;
+
+            for (int j = 0; j < edge.polyline.Count - 1; j++)
+            {
+                Vector3 a = edge.polyline[j];
+                Vector3 b = edge.polyline[j + 1];
+                Vector3 candidatePoint = ClosestPointOnSegment(position, a, b);
+                float candidateDistance = Vector3.Distance(position, candidatePoint);
+                if (candidateDistance > distance)
+                    continue;
+
+                distance = candidateDistance;
+                projectedPoint = candidatePoint;
+                edgeStart = fromNode;
+                edgeEnd = toNode;
+            }
+        }
+
+        return edgeStart != null && edgeEnd != null;
+    }
+
+    private float GetPolylineLength(List<Vector3> polyline)
+    {
+        float length = 0f;
+
+        if (polyline == null)
+            return length;
+
+        for (int i = 0; i < polyline.Count - 1; i++)
+            length += Vector3.Distance(polyline[i], polyline[i + 1]);
+
+        return length;
+    }
+
+    private Vector3 GetBestBuildingEntrancePoint(BuildingZoneV2 building)
+    {
+        if (building == null)
+            return Vector3.zero;
+
+        Vector3 bestWalkablePoint = building.Position;
+        float bestDistance = float.MaxValue;
+
+        for (int i = 0; i < edges.Count; i++)
+        {
+            PedestrianEdgeDataV2 edge = edges[i];
+            if (edge == null || edge.isOffroad || edge.polyline == null || edge.polyline.Count < 2)
+                continue;
+
+            for (int j = 0; j < edge.polyline.Count - 1; j++)
+            {
+                Vector3 projected = ClosestPointOnSegment(building.Position, edge.polyline[j], edge.polyline[j + 1]);
+                float distance = Vector3.Distance(building.Position, projected);
+                if (distance >= bestDistance)
+                    continue;
+
+                bestDistance = distance;
+                bestWalkablePoint = projected;
+            }
+        }
+
+        return building.GetClosestPointOnPerimeter(bestWalkablePoint);
     }
 
     private PedestrianNodeDataV2 GetNodeById(int nodeId)
@@ -581,6 +1243,8 @@ public class PedestrianNetworkV2 : MonoBehaviour
                 Gizmos.color = Color.yellow;
             else if (node.isDestinationAnchor)
                 Gizmos.color = Color.magenta;
+            else if (node.isBuildingAnchor)
+                Gizmos.color = new Color(0.4f, 0.7f, 1f, 1f);
             else
                 Gizmos.color = nodeColor;
 

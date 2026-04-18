@@ -15,6 +15,7 @@ public class RoadLaneConnectionV2
         Straight,
         Left,
         Right,
+        UTurn,
         LaneChangeLeft,
         LaneChangeRight
     }

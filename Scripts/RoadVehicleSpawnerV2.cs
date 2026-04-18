@@ -98,14 +98,159 @@ public class RoadVehicleSpawnerV2 : MonoBehaviour
         if (spawnLane == null)
             spawnLane = lanePath[0];
 
-        Vector3 spawnPosition = spawnLane.start;
-        RoadVehicleAgentV2 vehicle = Instantiate(vehiclePrefab, spawnPosition, Quaternion.identity);
-        vehicle.Initialize(lanePath, spawnLane);
-
-        spawnedVehicles.Add(vehicle);
+        RoadVehicleAgentV2 vehicle;
+        if (!TrySpawnVehicle(lanePath, spawnLane, null, out vehicle))
+            return;
 
         if (logPathResult)
             Debug.Log($"V2 path spawned: {GetNodeName(resolvedStartNode)} -> {GetNodeName(targetNode)}, lanes: {lanePath.Count}", this);
+    }
+
+    public bool TrySpawnTripFromParking(
+        ParkingSpotV2 startParkingSpot,
+        ParkingSpotV2 targetParkingSpot,
+        System.Action<RoadVehicleAgentV2> onArrived,
+        out RoadVehicleAgentV2 vehicle)
+    {
+        vehicle = null;
+
+        if (!TryGetTripPathFromParking(startParkingSpot, targetParkingSpot, out List<RoadLaneDataV2> lanePath))
+            return false;
+
+        RoadLaneDataV2 spawnLane = GetSpawnLane(lanePath[0]);
+        if (spawnLane == null)
+            spawnLane = lanePath[0];
+
+        if (!startParkingSpot.Reserve())
+            return false;
+
+        if (!targetParkingSpot.Reserve())
+        {
+            startParkingSpot.Release();
+            return false;
+        }
+
+        System.Action<RoadVehicleAgentV2> wrappedCallback = spawnedVehicle =>
+        {
+            if (onArrived != null)
+                onArrived.Invoke(spawnedVehicle);
+
+            if (spawnedVehicle != null)
+                spawnedVehicles.Remove(spawnedVehicle);
+        };
+
+        Vector3 spawnPosition = startParkingSpot.ParkingPosition;
+        vehicle = Instantiate(vehiclePrefab, spawnPosition, Quaternion.identity);
+
+        if (vehicle == null)
+        {
+            startParkingSpot.Release();
+            targetParkingSpot.Release();
+            return false;
+        }
+
+        vehicle.InitializeTrip(lanePath, spawnLane, startParkingSpot, targetParkingSpot, wrappedCallback);
+
+        if (vehicle == null)
+        {
+            startParkingSpot.Release();
+            targetParkingSpot.Release();
+            return false;
+        }
+
+        spawnedVehicles.Add(vehicle);
+
+        startParkingSpot.Release();
+        return true;
+    }
+
+    public bool TrySpawnTripToParkingFromWorld(
+        Vector3 startPosition,
+        ParkingSpotV2 targetParkingSpot,
+        System.Action<RoadVehicleAgentV2> onArrived,
+        out RoadVehicleAgentV2 vehicle)
+    {
+        vehicle = null;
+
+        if (!TryGetTripPathToParkingFromWorld(startPosition, targetParkingSpot, out List<RoadLaneDataV2> lanePath))
+            return false;
+
+        if (targetParkingSpot == null || !targetParkingSpot.Reserve())
+            return false;
+
+        RoadLaneDataV2 spawnLane = GetSpawnLane(lanePath[0]);
+        if (spawnLane == null)
+            spawnLane = lanePath[0];
+
+        System.Action<RoadVehicleAgentV2> wrappedCallback = spawnedVehicle =>
+        {
+            if (onArrived != null)
+                onArrived.Invoke(spawnedVehicle);
+
+            if (spawnedVehicle != null)
+                spawnedVehicles.Remove(spawnedVehicle);
+        };
+
+        vehicle = Instantiate(vehiclePrefab, spawnLane.start, Quaternion.identity);
+        if (vehicle == null)
+        {
+            targetParkingSpot.Release();
+            return false;
+        }
+
+        vehicle.InitializeTrip(lanePath, spawnLane, null, targetParkingSpot, wrappedCallback);
+        spawnedVehicles.Add(vehicle);
+        return true;
+    }
+
+    public bool TryGetTripPathFromParking(
+        ParkingSpotV2 startParkingSpot,
+        ParkingSpotV2 targetParkingSpot,
+        out List<RoadLaneDataV2> lanePath)
+    {
+        lanePath = null;
+
+        if (network == null || startParkingSpot == null || targetParkingSpot == null)
+            return false;
+
+        if (!targetParkingSpot.CanUse())
+            return false;
+
+        RoadNodeV2 startNode = ResolveParkingNode(startParkingSpot);
+        RoadNodeV2 targetNode = ResolveParkingNode(targetParkingSpot);
+
+        if (startNode == null || targetNode == null || startNode == targetNode)
+            return false;
+
+        if (!RoadPathfinderV2.TryFindPath(network, startNode, targetNode, out lanePath))
+            return false;
+
+        return lanePath != null && lanePath.Count > 0;
+    }
+
+    public bool TryGetTripPathToParkingFromWorld(
+        Vector3 startPosition,
+        ParkingSpotV2 targetParkingSpot,
+        out List<RoadLaneDataV2> lanePath)
+    {
+        lanePath = null;
+
+        if (network == null || targetParkingSpot == null)
+            return false;
+
+        if (!targetParkingSpot.CanUse())
+            return false;
+
+        RoadNodeV2 resolvedStartNode = FindNearestNodeToPosition(startPosition, Mathf.Max(0.5f, startNodeSearchRadius * 3f));
+        RoadNodeV2 resolvedTargetNode = ResolveParkingNode(targetParkingSpot);
+
+        if (resolvedStartNode == null || resolvedTargetNode == null || resolvedStartNode == resolvedTargetNode)
+            return false;
+
+        if (!RoadPathfinderV2.TryFindPath(network, resolvedStartNode, resolvedTargetNode, out lanePath))
+            return false;
+
+        return lanePath != null && lanePath.Count > 0;
     }
 
     public void SwapDirection()
@@ -171,6 +316,67 @@ public class RoadVehicleSpawnerV2 : MonoBehaviour
         return best;
     }
 
+    private bool TrySpawnVehicle(
+        List<RoadLaneDataV2> lanePath,
+        RoadLaneDataV2 spawnLane,
+        System.Action<RoadVehicleAgentV2> onArrived,
+        out RoadVehicleAgentV2 vehicle)
+    {
+        vehicle = null;
+
+        if (lanePath == null || lanePath.Count == 0 || spawnLane == null)
+            return false;
+
+        Vector3 spawnPosition = spawnLane.start;
+        vehicle = Instantiate(vehiclePrefab, spawnPosition, Quaternion.identity);
+
+        if (vehicle == null)
+            return false;
+
+        vehicle.Initialize(lanePath, spawnLane, onArrived);
+        spawnedVehicles.Add(vehicle);
+        return true;
+    }
+
+    private RoadNodeV2 ResolveParkingNode(ParkingSpotV2 parkingSpot)
+    {
+        if (network == null || parkingSpot == null)
+            return null;
+
+        RoadSegmentV2 connectedSegment = parkingSpot.ConnectedRoadSegment;
+        if (connectedSegment != null)
+        {
+            RoadNodeV2 start = connectedSegment.StartNode;
+            RoadNodeV2 end = connectedSegment.EndNode;
+
+            if (start != null && end != null)
+            {
+                float startDistance = Vector3.Distance(parkingSpot.ParkingPosition, start.transform.position);
+                float endDistance = Vector3.Distance(parkingSpot.ParkingPosition, end.transform.position);
+                return startDistance <= endDistance ? start : end;
+            }
+        }
+
+        RoadNodeV2 bestNode = null;
+        float bestDistance = float.MaxValue;
+
+        for (int i = 0; i < network.Nodes.Count; i++)
+        {
+            RoadNodeV2 node = network.Nodes[i];
+            if (node == null)
+                continue;
+
+            float distance = Vector3.Distance(parkingSpot.ParkingPosition, node.transform.position);
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                bestNode = node;
+            }
+        }
+
+        return bestNode;
+    }
+
     private RoadNodeV2 GetResolvedStartNode()
     {
         if (!useNearestNodeFromTransform)
@@ -186,10 +392,16 @@ public class RoadVehicleSpawnerV2 : MonoBehaviour
 
     private RoadNodeV2 FindNearestNodeToTransform()
     {
+        return FindNearestNodeToPosition(transform.position, startNodeSearchRadius);
+    }
+
+    private RoadNodeV2 FindNearestNodeToPosition(Vector3 position, float searchRadius)
+    {
         if (network == null)
             return null;
 
-        float bestDistance = Mathf.Max(0.01f, startNodeSearchRadius);
+        float maxDistance = Mathf.Max(0.01f, searchRadius);
+        float bestDistance = float.MaxValue;
         RoadNodeV2 bestNode = null;
 
         for (int i = 0; i < network.Nodes.Count; i++)
@@ -198,8 +410,25 @@ public class RoadVehicleSpawnerV2 : MonoBehaviour
             if (node == null)
                 continue;
 
-            float distance = Vector3.Distance(transform.position, node.transform.position);
-            if (distance <= bestDistance)
+            float distance = Vector3.Distance(position, node.transform.position);
+            if (distance <= maxDistance && distance < bestDistance)
+            {
+                bestDistance = distance;
+                bestNode = node;
+            }
+        }
+
+        if (bestNode != null)
+            return bestNode;
+
+        for (int i = 0; i < network.Nodes.Count; i++)
+        {
+            RoadNodeV2 node = network.Nodes[i];
+            if (node == null)
+                continue;
+
+            float distance = Vector3.Distance(position, node.transform.position);
+            if (distance < bestDistance)
             {
                 bestDistance = distance;
                 bestNode = node;

@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+ï»¿using System.Collections.Generic;
 using UnityEngine;
 
 public class RoadVehicleAgentV2 : MonoBehaviour
@@ -41,6 +41,7 @@ public class RoadVehicleAgentV2 : MonoBehaviour
     private int currentWaypointIndex;
     private bool isInitialized;
     private float currentSpeed;
+    private System.Action<RoadVehicleAgentV2> arrivalCallback;
 
     private GateInfo currentJunctionGate;
     private int waitingGateIndex = -1;
@@ -57,8 +58,27 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         activeVehicles.Remove(this);
     }
 
+    private void OnDestroy()
+    {
+        if (isParked && parkedAtSpot != null)
+            parkedAtSpot.Release();
+    }
 
-    public void Initialize(List<RoadLaneDataV2> lanePath, RoadLaneDataV2 initialLane = null)
+
+    public void Initialize(
+        List<RoadLaneDataV2> lanePath,
+        RoadLaneDataV2 initialLane = null,
+        System.Action<RoadVehicleAgentV2> onArrived = null)
+    {
+        InitializeTrip(lanePath, initialLane, null, null, onArrived);
+    }
+
+    public void InitializeTrip(
+        List<RoadLaneDataV2> lanePath,
+        RoadLaneDataV2 initialLane,
+        ParkingSpotV2 startParkingSpot,
+        ParkingSpotV2 targetParkingSpot,
+        System.Action<RoadVehicleAgentV2> onArrived = null)
     {
         if (lanePath == null || lanePath.Count == 0)
         {
@@ -72,8 +92,11 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         gatedWaypointIndices.Clear();
         currentWaypointIndex = 0;
         currentJunctionGate = null;
+        arrivalCallback = onArrived;
+        parkedAtSpot = targetParkingSpot;
+        isParked = false;
 
-        BuildWaypointPath(actualInitialLane, lanePath);
+        BuildWaypointPath(actualInitialLane, lanePath, startParkingSpot, targetParkingSpot);
 
         if (waypoints.Count < 2)
         {
@@ -87,6 +110,7 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         currentWaypointIndex = 1;
         currentSpeed = 0f;
         isInitialized = true;
+        enabled = true;
     }
 
     private void Update()
@@ -98,7 +122,7 @@ public class RoadVehicleAgentV2 : MonoBehaviour
 
         if (currentWaypointIndex >= waypoints.Count)
         {
-            Destroy(gameObject);
+            CompleteArrival();
             return;
         }
 
@@ -154,8 +178,25 @@ public class RoadVehicleAgentV2 : MonoBehaviour
             currentWaypointIndex++;
 
             if (currentWaypointIndex >= waypoints.Count)
-                Destroy(gameObject);
+                CompleteArrival();
         }
+    }
+
+    private void CompleteArrival()
+    {
+        System.Action<RoadVehicleAgentV2> callback = arrivalCallback;
+        arrivalCallback = null;
+
+        if (callback != null)
+            callback.Invoke(this);
+
+        if (parkedAtSpot != null)
+        {
+            ParkAtSpot(parkedAtSpot);
+            return;
+        }
+
+        Destroy(gameObject);
     }
 
     private float GetAllowedMoveDistance(Vector3 currentPosition, Vector3 moveDirection, float desiredMove)
@@ -202,12 +243,19 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         return Mathf.Min(speed, Mathf.Sqrt(2f * decel * distanceToTarget));
     }
 
-    private void BuildWaypointPath(RoadLaneDataV2 initialLane, List<RoadLaneDataV2> lanePath)
+    private void BuildWaypointPath(
+        RoadLaneDataV2 initialLane,
+        List<RoadLaneDataV2> lanePath,
+        ParkingSpotV2 startParkingSpot,
+        ParkingSpotV2 targetParkingSpot)
     {
         if (lanePath == null || lanePath.Count == 0 || initialLane == null)
             return;
 
-        AddLanePolyline(initialLane, includeFirstPoint: true, skipLastPoint: true);
+        if (startParkingSpot != null)
+            AddLanePolylineFromProjectedStart(initialLane, startParkingSpot.ParkingPosition);
+        else
+            AddLanePolyline(initialLane, includeFirstPoint: true, skipLastPoint: true);
 
         RoadLaneDataV2 activeLane = initialLane;
 
@@ -217,7 +265,10 @@ public class RoadVehicleAgentV2 : MonoBehaviour
 
             if (!hasNext)
             {
-                AddLanePolyline(activeLane, includeFirstPoint: false, skipLastPoint: false);
+                if (targetParkingSpot != null)
+                    AddParkingArrivalPath(activeLane, targetParkingSpot);
+                else
+                    AddLanePolyline(activeLane, includeFirstPoint: false, skipLastPoint: false);
                 continue;
             }
 
@@ -295,6 +346,9 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         if (immediateMovementType == RoadLaneConnectionV2.MovementType.Right)
             return GetLaneForTurnPreparation(currentLane, sameDirectionLanes, immediateMovementType, false);
 
+        if (immediateMovementType == RoadLaneConnectionV2.MovementType.UTurn)
+            return GetOppositeDirectionLaneForTurnPreparation(currentLane);
+
         if (!planTurnsAhead)
             return currentLane;
 
@@ -309,6 +363,9 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         {
             return GetLaneForTurnPreparation(currentLane, sameDirectionLanes, futureMovement, true);
         }
+
+        if (futureMovement == RoadLaneConnectionV2.MovementType.UTurn)
+            return GetOppositeDirectionLaneForTurnPreparation(currentLane);
 
         return currentLane;
     }
@@ -343,7 +400,8 @@ public class RoadVehicleAgentV2 : MonoBehaviour
             RoadLaneConnectionV2.MovementType movementType = GetMovementType(signedAngle);
 
             if (movementType == RoadLaneConnectionV2.MovementType.Left ||
-                movementType == RoadLaneConnectionV2.MovementType.Right)
+                movementType == RoadLaneConnectionV2.MovementType.Right ||
+                movementType == RoadLaneConnectionV2.MovementType.UTurn)
             {
                 return movementType;
             }
@@ -395,6 +453,31 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         }
 
         return currentLane;
+    }
+
+    private RoadLaneDataV2 GetOppositeDirectionLaneForTurnPreparation(RoadLaneDataV2 currentLane)
+    {
+        if (currentLane == null || currentLane.ownerSegment == null)
+            return currentLane;
+
+        List<RoadLaneDataV2> oppositeDirectionLanes = currentLane.ownerSegment.GetDrivingLanes(
+            currentLane.toNode,
+            currentLane.fromNode
+        );
+
+        if (oppositeDirectionLanes == null || oppositeDirectionLanes.Count == 0)
+            return currentLane;
+
+        int targetIndex = Mathf.Clamp(currentLane.localLaneIndex, 0, oppositeDirectionLanes.Count - 1);
+
+        for (int i = 0; i < oppositeDirectionLanes.Count; i++)
+        {
+            RoadLaneDataV2 lane = oppositeDirectionLanes[i];
+            if (lane != null && lane.localLaneIndex == targetIndex)
+                return lane;
+        }
+
+        return oppositeDirectionLanes[oppositeDirectionLanes.Count - 1];
     }
 
     private List<Vector3> BuildMidSegmentLaneChange(RoadLaneDataV2 fromLane, RoadLaneDataV2 toLane)
@@ -456,6 +539,235 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         result.Add(lane.start);
         result.Add(lane.end);
         return result;
+    }
+
+    private void AddLanePolylineFromProjectedStart(RoadLaneDataV2 lane, Vector3 startPoint)
+    {
+        List<Vector3> polyline = GetLanePolyline(lane);
+        if (polyline.Count == 0)
+            return;
+
+        ProjectPointOnPolyline(polyline, startPoint, out int segmentIndex, out Vector3 projectedPoint);
+        AddPointIfFar(startPoint);
+        AddPointIfFar(projectedPoint);
+
+        for (int i = segmentIndex + 1; i < polyline.Count; i++)
+            AddPointIfFar(polyline[i]);
+    }
+
+    private void AddLanePolylineToProjectedStart(RoadLaneDataV2 lane, Vector3 startPoint)
+    {
+        AddLanePolylineFromProjectedStart(lane, startPoint);
+    }
+
+    private void AddLanePolylineToProjectedEnd(RoadLaneDataV2 lane, Vector3 endPoint)
+    {
+        List<Vector3> polyline = GetLanePolyline(lane);
+        if (polyline.Count == 0)
+            return;
+
+        ProjectPointOnPolyline(polyline, endPoint, out int segmentIndex, out Vector3 projectedPoint);
+
+        for (int i = 0; i <= segmentIndex; i++)
+            AddPointIfFar(polyline[i]);
+
+        AddPointIfFar(projectedPoint);
+    }
+
+    private void AddParkingArrivalPath(RoadLaneDataV2 approachLane, ParkingSpotV2 parkingSpot)
+    {
+        if (parkingSpot == null)
+            return;
+
+        RoadLaneDataV2 parkingLane = GetParkingApproachLane(approachLane, parkingSpot);
+        if (parkingLane == null)
+        {
+            AddPointIfFar(parkingSpot.ParkingPosition);
+            return;
+        }
+
+        if (approachLane != null &&
+            approachLane != parkingLane &&
+            approachLane.toNode != null &&
+            parkingLane.fromNode == approachLane.toNode)
+        {
+            List<Vector3> turnPoints = BuildNodeAnchoredTurn(approachLane, parkingLane);
+            for (int i = 0; i < turnPoints.Count; i++)
+                AddPointIfFar(turnPoints[i]);
+        }
+
+        List<Vector3> parkingPolyline = GetLanePolyline(parkingLane);
+        if (parkingPolyline.Count == 0)
+        {
+            AddPointIfFar(parkingSpot.ParkingPosition);
+            return;
+        }
+
+        ProjectPointOnPolyline(parkingPolyline, parkingSpot.ParkingPosition, out int parkingSegmentIndex, out Vector3 projectedPoint);
+        AddLanePolylineToProjectedEnd(parkingLane, parkingSpot.ParkingPosition);
+        AddParkingDockingCurve(parkingPolyline, parkingSegmentIndex, projectedPoint, parkingSpot.ParkingPosition);
+    }
+
+    private void AddParkingDockingCurve(
+        List<Vector3> parkingPolyline,
+        int parkingSegmentIndex,
+        Vector3 roadPoint,
+        Vector3 parkingPoint)
+    {
+        if (parkingPolyline == null || parkingPolyline.Count < 2)
+        {
+            AddPointIfFar(parkingPoint);
+            return;
+        }
+
+        Vector3 toParking = parkingPoint - roadPoint;
+        float distance = toParking.magnitude;
+        if (distance < 0.02f)
+        {
+            AddPointIfFar(parkingPoint);
+            return;
+        }
+
+        Vector3 laneDirection = GetPolylineSegmentDirection(parkingPolyline, parkingSegmentIndex);
+        Vector3 curbDirection = toParking.normalized;
+
+        Vector3 control = Vector3.Lerp(roadPoint, parkingPoint, 0.5f);
+        control += laneDirection * Mathf.Min(0.18f, distance * 0.25f);
+        control += curbDirection * Mathf.Min(0.14f, distance * 0.2f);
+
+        AddQuadraticBezierSamples(waypoints, roadPoint, control, parkingPoint, 4);
+        AddPointIfFar(parkingPoint);
+    }
+
+    private Vector3 GetPolylineSegmentDirection(List<Vector3> polyline, int segmentIndex)
+    {
+        if (polyline == null || polyline.Count < 2)
+            return Vector3.right;
+
+        segmentIndex = Mathf.Clamp(segmentIndex, 0, polyline.Count - 2);
+        Vector3 dir = polyline[segmentIndex + 1] - polyline[segmentIndex];
+        dir.z = 0f;
+
+        if (dir.sqrMagnitude < 0.0001f)
+            return Vector3.right;
+
+        return dir.normalized;
+    }
+
+    private RoadLaneDataV2 GetParkingApproachLane(RoadLaneDataV2 approachLane, ParkingSpotV2 parkingSpot)
+    {
+        if (parkingSpot == null)
+            return approachLane;
+
+        RoadSegmentV2 segment = parkingSpot.ConnectedRoadSegment;
+        if (segment == null)
+            return approachLane;
+
+        RoadNodeV2 entryNode = approachLane != null ? approachLane.toNode : null;
+
+        if (entryNode != null)
+        {
+            RoadNodeV2 otherNode = null;
+
+            if (segment.StartNode == entryNode)
+                otherNode = segment.EndNode;
+            else if (segment.EndNode == entryNode)
+                otherNode = segment.StartNode;
+
+            if (otherNode != null)
+            {
+                List<RoadLaneDataV2> candidates = segment.GetDrivingLanes(entryNode, otherNode);
+                RoadLaneDataV2 candidate = PickClosestLaneToPoint(candidates, parkingSpot.ParkingPosition);
+                if (candidate != null)
+                    return candidate;
+            }
+        }
+
+        List<RoadLaneDataV2> fallbackCandidates = segment.GetDrivingLanes(segment.StartNode, segment.EndNode);
+        RoadLaneDataV2 fallback = PickClosestLaneToPoint(fallbackCandidates, parkingSpot.ParkingPosition);
+        if (fallback != null)
+            return fallback;
+
+        fallbackCandidates = segment.GetDrivingLanes(segment.EndNode, segment.StartNode);
+        fallback = PickClosestLaneToPoint(fallbackCandidates, parkingSpot.ParkingPosition);
+        if (fallback != null)
+            return fallback;
+
+        return approachLane;
+    }
+
+    private RoadLaneDataV2 PickClosestLaneToPoint(List<RoadLaneDataV2> candidates, Vector3 point)
+    {
+        if (candidates == null || candidates.Count == 0)
+            return null;
+
+        RoadLaneDataV2 bestLane = null;
+        float bestDistance = float.MaxValue;
+
+        for (int i = 0; i < candidates.Count; i++)
+        {
+            RoadLaneDataV2 lane = candidates[i];
+            if (lane == null)
+                continue;
+
+            List<Vector3> polyline = GetLanePolyline(lane);
+            if (polyline.Count == 0)
+                continue;
+
+            ProjectPointOnPolyline(polyline, point, out int segmentIndex, out Vector3 projectedPoint);
+            float distance = Vector3.Distance(point, projectedPoint);
+
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                bestLane = lane;
+            }
+        }
+
+        return bestLane;
+    }
+
+    private void ProjectPointOnPolyline(
+        List<Vector3> polyline,
+        Vector3 point,
+        out int segmentIndex,
+        out Vector3 projectedPoint)
+    {
+        segmentIndex = 0;
+        projectedPoint = point;
+
+        if (polyline == null || polyline.Count < 2)
+            return;
+
+        float bestDistance = float.MaxValue;
+
+        for (int i = 0; i < polyline.Count - 1; i++)
+        {
+            Vector3 candidate = ProjectPointOnSegment(point, polyline[i], polyline[i + 1]);
+            float distance = Vector3.Distance(point, candidate);
+
+            if (distance >= bestDistance)
+                continue;
+
+            bestDistance = distance;
+            segmentIndex = i;
+            projectedPoint = candidate;
+        }
+    }
+
+    private Vector3 ProjectPointOnSegment(Vector3 point, Vector3 a, Vector3 b)
+    {
+        Vector3 ab = b - a;
+
+        if (ab.sqrMagnitude < 0.0001f)
+            return a;
+
+        float t = Vector3.Dot(point - a, ab) / Vector3.Dot(ab, ab);
+        t = Mathf.Clamp01(t);
+
+        Vector3 projected = a + ab * t;
+        projected.z = 0f;
+        return projected;
     }
 
     private Vector3 GetPointAlongPolylineNormalized(List<Vector3> points, float normalizedT)
@@ -568,6 +880,9 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         if (absAngle < 20f)
             return RoadLaneConnectionV2.MovementType.Straight;
 
+        if (absAngle >= 140f)
+            return RoadLaneConnectionV2.MovementType.UTurn;
+
         return signedAngle > 0f
             ? RoadLaneConnectionV2.MovementType.Left
             : RoadLaneConnectionV2.MovementType.Right;
@@ -634,6 +949,18 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         points.Add(stopPoint);
         AddPointIfFar(points, fromAnchor);
 
+        if (absAngle >= 140f)
+        {
+            bool isDeadEnd = node.ConnectedSegments == null || node.ConnectedSegments.Count <= 1;
+            List<Vector3> uTurnPoints = isDeadEnd
+                ? BuildDeadEndUTurnAtNode(node.transform.position, fromLane, toLane, fromAnchor, toAnchor, inDir, signedAngle)
+                : BuildUTurnAtNode(node.transform.position, fromLane, toLane, fromAnchor, toAnchor, inDir, signedAngle);
+            for (int i = 0; i < uTurnPoints.Count; i++)
+                AddPointIfFar(points, uTurnPoints[i]);
+
+            return points;
+        }
+
         if (absAngle < 20f || Vector3.Distance(fromAnchor, toAnchor) < 0.15f)
         {
             AddPointIfFar(points, Vector3.Lerp(fromAnchor, toAnchor, 0.5f));
@@ -653,6 +980,134 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         return points;
     }
 
+    private List<Vector3> BuildUTurnAtNode(
+        Vector3 nodeCenter,
+        RoadLaneDataV2 fromLane,
+        RoadLaneDataV2 toLane,
+        Vector3 fromAnchor,
+        Vector3 toAnchor,
+        Vector3 inDir,
+        float signedAngle)
+    {
+        List<Vector3> points = new List<Vector3>();
+
+        Vector3 turnNormal = new Vector3(-inDir.y, inDir.x, 0f);
+        if (turnNormal.sqrMagnitude < 0.0001f)
+            turnNormal = Vector3.up;
+
+        if (signedAngle < 0f)
+            turnNormal = -turnNormal;
+
+        float laneHalfWidth = 0.3f;
+        if (fromLane != null && fromLane.ownerSegment != null)
+            laneHalfWidth = Mathf.Max(laneHalfWidth, fromLane.ownerSegment.LaneWidth * 0.65f);
+
+        if (toLane != null && toLane.ownerSegment != null)
+            laneHalfWidth = Mathf.Max(laneHalfWidth, toLane.ownerSegment.LaneWidth * 0.65f);
+
+        float radius = Mathf.Max(0.35f, laneHalfWidth + 0.18f);
+        Vector3 side = turnNormal.normalized;
+        Vector3 control1 = fromAnchor + inDir.normalized * radius + side * radius;
+        Vector3 control2 = toAnchor - inDir.normalized * radius + side * radius;
+
+        points.Add(fromAnchor);
+        AddCubicBezierSamples(points, fromAnchor, control1, control2, toAnchor, 8);
+        AddPointIfFar(points, toAnchor);
+
+        return points;
+    }
+
+    private List<Vector3> BuildDeadEndUTurnAtNode(
+        Vector3 nodeCenter,
+        RoadLaneDataV2 fromLane,
+        RoadLaneDataV2 toLane,
+        Vector3 fromAnchor,
+        Vector3 toAnchor,
+        Vector3 inDir,
+        float signedAngle)
+    {
+        List<Vector3> points = new List<Vector3>();
+        Vector3 forward = inDir.sqrMagnitude < 0.0001f ? Vector3.up : inDir.normalized;
+        Vector3 midpoint = (fromAnchor + toAnchor) * 0.5f;
+
+        float anchorSpacing = Vector3.Distance(fromAnchor, toAnchor);
+        float roadHalfWidth = 0.35f;
+
+        if (fromLane != null && fromLane.ownerSegment != null)
+            roadHalfWidth = Mathf.Max(roadHalfWidth, fromLane.ownerSegment.TotalRoadWidth * 0.5f);
+
+        if (toLane != null && toLane.ownerSegment != null)
+            roadHalfWidth = Mathf.Max(roadHalfWidth, toLane.ownerSegment.TotalRoadWidth * 0.5f);
+
+        float forwardOffset = Mathf.Max(roadHalfWidth * 0.9f, anchorSpacing * 0.75f, 0.7f);
+        Vector3 apex = midpoint + forward * forwardOffset;
+
+        Vector3 control1 = Vector3.Lerp(fromAnchor, apex, 0.5f);
+        Vector3 control2 = Vector3.Lerp(apex, toAnchor, 0.5f);
+
+        points.Add(fromAnchor);
+        AddQuadraticBezierSamples(points, fromAnchor, control1, apex, 6);
+        AddQuadraticBezierSamples(points, apex, control2, toAnchor, 6);
+        AddPointIfFar(points, toAnchor);
+
+        return points;
+    }
+
+    private void AddQuadraticBezierSamples(
+        List<Vector3> points,
+        Vector3 p0,
+        Vector3 p1,
+        Vector3 p2,
+        int sampleCount)
+    {
+        if (points == null)
+            return;
+
+        sampleCount = Mathf.Max(2, sampleCount);
+
+        for (int i = 1; i <= sampleCount; i++)
+        {
+            float t = (float)i / sampleCount;
+            AddPointIfFar(points, EvaluateQuadraticBezier(p0, p1, p2, t));
+        }
+    }
+
+    private void AddCubicBezierSamples(
+        List<Vector3> points,
+        Vector3 p0,
+        Vector3 p1,
+        Vector3 p2,
+        Vector3 p3,
+        int sampleCount)
+    {
+        if (points == null)
+            return;
+
+        sampleCount = Mathf.Max(2, sampleCount);
+
+        for (int i = 1; i <= sampleCount; i++)
+        {
+            float t = (float)i / sampleCount;
+            AddPointIfFar(points, EvaluateCubicBezier(p0, p1, p2, p3, t));
+        }
+    }
+
+    private Vector3 EvaluateQuadraticBezier(Vector3 p0, Vector3 p1, Vector3 p2, float t)
+    {
+        float u = 1f - t;
+        return u * u * p0 + 2f * u * t * p1 + t * t * p2;
+    }
+
+    private Vector3 EvaluateCubicBezier(Vector3 p0, Vector3 p1, Vector3 p2, Vector3 p3, float t)
+    {
+        float u = 1f - t;
+        return
+            u * u * u * p0 +
+            3f * u * u * t * p1 +
+            3f * u * t * t * p2 +
+            t * t * t * p3;
+    }
+
     private Vector3 GetStopPointBeforeNode(RoadLaneDataV2 fromLane, Vector3 fromAnchor, Vector3 inDir)
     {
         float offset = 0.18f;
@@ -668,7 +1123,7 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         }
         else
         {
-            // Òî÷êà, ãäå âèçóàëüíî ðèñóåòñÿ ñòîï-ëèíèÿ
+            // Ð¢Ð¾Ñ‡ÐºÐ°, Ð³Ð´Ðµ Ð²Ð¸Ð·ÑƒÐ°Ð»ÑŒÐ½Ð¾ Ñ€Ð¸ÑÑƒÐµÑ‚ÑÑ ÑÑ‚Ð¾Ð¿-Ð»Ð¸Ð½Ð¸Ñ
             stopLinePoint = fromLane.end - inDir.normalized * offset;
         }
 
@@ -991,7 +1446,7 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         int incomingOrder = a.incomingLane.localLaneIndex.CompareTo(b.incomingLane.localLaneIndex);
         int outgoingOrder = a.outgoingLane.localLaneIndex.CompareTo(b.outgoingLane.localLaneIndex);
 
-        // Åñëè ïîðÿäîê ïîëîñ ñîõðàíÿåòñÿ, òðàåêòîðèè íå ïåðåñåêàþòñÿ.
+        // Ð•ÑÐ»Ð¸ Ð¿Ð¾Ñ€ÑÐ´Ð¾Ðº Ð¿Ð¾Ð»Ð¾Ñ ÑÐ¾Ñ…Ñ€Ð°Ð½ÑÐµÑ‚ÑÑ, Ñ‚Ñ€Ð°ÐµÐºÑ‚Ð¾Ñ€Ð¸Ð¸ Ð½Ðµ Ð¿ÐµÑ€ÐµÑÐµÐºÐ°ÑŽÑ‚ÑÑ.
         if (incomingOrder == 0 || outgoingOrder == 0)
             return false;
 
@@ -1235,7 +1690,8 @@ public class RoadVehicleAgentV2 : MonoBehaviour
         if (myGate == null || myGate.junctionNode == null || myGate.incomingSegment == null)
             return false;
 
-        if (myGate.movementType != RoadLaneConnectionV2.MovementType.Left)
+        if (myGate.movementType != RoadLaneConnectionV2.MovementType.Left &&
+            myGate.movementType != RoadLaneConnectionV2.MovementType.UTurn)
             return false;
 
         Vector3 myIncomingDir = GetIncomingDirection(myGate.incomingSegment, myGate.junctionNode);
@@ -1255,7 +1711,8 @@ public class RoadVehicleAgentV2 : MonoBehaviour
                 continue;
 
             if (otherGate.movementType == RoadLaneConnectionV2.MovementType.Straight ||
-                otherGate.movementType == RoadLaneConnectionV2.MovementType.Right)
+                otherGate.movementType == RoadLaneConnectionV2.MovementType.Right ||
+                otherGate.movementType == RoadLaneConnectionV2.MovementType.UTurn)
                 return true;
         }
 
@@ -1419,4 +1876,29 @@ public class RoadVehicleAgentV2 : MonoBehaviour
             rotationSpeed * Time.deltaTime
         );
     }
+
+    private void ParkAtSpot(ParkingSpotV2 parkingSpot)
+    {
+        if (parkingSpot == null || isParked)
+            return;
+
+        isParked = true;
+        isInitialized = false;
+        currentSpeed = 0f;
+
+        transform.position = parkingSpot.ParkingPosition;
+
+        Vector3 forward = parkingSpot.Forward;
+        if (forward.sqrMagnitude < 0.0001f)
+            forward = Vector3.right;
+
+        float angle = Mathf.Atan2(forward.y, forward.x) * Mathf.Rad2Deg;
+        transform.rotation = Quaternion.Euler(0f, 0f, angle);
+
+        enabled = false;
+    }
+
+    private bool isParked;
+    private ParkingSpotV2 parkedAtSpot;
 }
+

@@ -686,6 +686,9 @@ private void AddManualConnection(RoadNodeV2 node, RoadLaneDataV2 fromLane, RoadL
     if (absAngle <= straightAngleThreshold)
         return RoadLaneConnectionV2.MovementType.Straight;
 
+    if (absAngle >= 140f)
+        return RoadLaneConnectionV2.MovementType.UTurn;
+
     return turnScore > 0f
         ? RoadLaneConnectionV2.MovementType.Left
         : RoadLaneConnectionV2.MovementType.Right;
@@ -989,8 +992,11 @@ private void AddManualConnection(RoadNodeV2 node, RoadLaneDataV2 fromLane, RoadL
 
 #if UNITY_EDITOR
         Undo.RegisterCreatedObjectUndo(nodeObject, "Create Road Node");
-        EditorUtility.SetDirty(this);
-        EditorSceneManager.MarkSceneDirty(gameObject.scene);
+        if (!Application.isPlaying)
+        {
+            EditorUtility.SetDirty(this);
+            EditorSceneManager.MarkSceneDirty(gameObject.scene);
+        }
 #endif
 
         return node;
@@ -1356,10 +1362,14 @@ Undo.RegisterCreatedObjectUndo(segmentObject, "Create Road Segment");
             TryCollapsePassThroughNode(endNode);
 
         RefreshAll();
+        RefreshPedestrianGraph();
 
 #if UNITY_EDITOR
-    EditorUtility.SetDirty(this);
-    EditorSceneManager.MarkSceneDirty(gameObject.scene);
+    if (!Application.isPlaying)
+    {
+        EditorUtility.SetDirty(this);
+        EditorSceneManager.MarkSceneDirty(gameObject.scene);
+    }
 #endif
     }
 
@@ -1390,6 +1400,8 @@ Undo.RegisterCreatedObjectUndo(segmentObject, "Create Road Segment");
         DeleteNodeIfOrphaned(startNode);
         DeleteNodeIfOrphaned(endNode);
     }
+
+    RefreshPedestrianGraph();
 }
 
 private void DeleteNodeIfOrphaned(RoadNodeV2 node)
@@ -1467,6 +1479,14 @@ private void DeleteNodeIfOrphaned(RoadNodeV2 node)
 
         return merged != null;
     }
+
+    private void RefreshPedestrianGraph()
+    {
+        PedestrianNetworkV2 pedestrianNetwork = FindFirstObjectByType<PedestrianNetworkV2>();
+        if (pedestrianNetwork != null)
+            pedestrianNetwork.RebuildGraph();
+    }
+
     private RoadNodeV2 GetOtherNode(RoadSegmentV2 segment, RoadNodeV2 node)
     {
         if (segment == null || node == null)

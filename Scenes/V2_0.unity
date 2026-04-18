@@ -486,7 +486,16 @@ MonoBehaviour:
   edgeColor: {r: 0.2, g: 0.9, b: 1, a: 0.9}
   offroadColor: {r: 1, g: 0.8, b: 0.2, a: 0.9}
   nodeRadius: 0.06
-  nodes: []
+  nodes:
+  - id: 1
+    position: {x: 7.83, y: 0.92, z: 0}
+    isParkingAnchor: 0
+    isDestinationAnchor: 1
+    isBuildingAnchor: 0
+    isCrosswalkHub: 0
+    parkingSpot: {fileID: 0}
+    destinationPoint: {fileID: 445387130}
+    buildingZone: {fileID: 0}
   edges: []
 --- !u!4 &210821149
 Transform:
@@ -700,7 +709,7 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &491276035
+--- !u!1 &445387129
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -708,48 +717,39 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 491276037}
-  - component: {fileID: 491276036}
+  - component: {fileID: 445387131}
+  - component: {fileID: 445387130}
   m_Layer: 0
-  m_Name: GameTime
+  m_Name: Point B
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &491276036
+--- !u!114 &445387130
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 491276035}
+  m_GameObject: {fileID: 445387129}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7c6781a4293375644bedf2f00639a1f7, type: 3}
+  m_Script: {fileID: 11500000, guid: db2b21d357d9b3a4e9e5844cf59201a1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  startYear: 2000
-  startMonth: 3
-  startDay: 1
-  startHour: 0
-  startMinute: 0
-  daysPerMonth: 7
-  monthsPerYear: 12
-  gameMinutesPerRealSecond: 1
-  normalSpeed: 1
-  fastSpeed: 3
-  simulationSpeed: 1
---- !u!4 &491276037
+  gizmoRadius: 0.18
+  destinationId: Destination
+--- !u!4 &445387131
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 491276035}
+  m_GameObject: {fileID: 445387129}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -3.0534682, y: -8.272965, z: -0.12628978}
+  m_LocalPosition: {x: 7.83, y: 0.92, z: -0.102239184}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -814,58 +814,6 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: -10.94, y: 4.99, z: 0.04952459}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &662477735
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 662477737}
-  - component: {fileID: 662477736}
-  m_Layer: 0
-  m_Name: GameBuildPreview
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &662477736
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 662477735}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c85964d00ea168148a345c9fa037908b, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  buildTool: {fileID: 1220206823}
-  targetCamera: {fileID: 0}
-  lineWidth: 0.06
-  circleLineWidth: 0.04
-  pointRadius: 0.08
-  curveSamples: 24
-  circleSegments: 28
-  overlayZ: -0.2
---- !u!4 &662477737
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 662477735}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -1.4964892, y: -1.3376899, z: -0.17823777}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1362,7 +1310,7 @@ MonoBehaviour:
   pedestrianNetwork: {fileID: 210821148}
   pedestrianPrefab: {fileID: 9216109279324824247, guid: fa2582717fb43ed4a8771f9c6848019c, type: 3}
   roadVehicleSpawner: {fileID: 0}
-  defaultDestination: {fileID: 0}
+  defaultDestination: {fileID: 445387130}
   defaultParkingSpot: {fileID: 0}
   targetParkingSpot: {fileID: 0}
   defaultTargetTransform: {fileID: 0}
@@ -1382,62 +1330,6 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: -10.33, y: -0.92, z: -0.076786615}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &1297724637
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1297724639}
-  - component: {fileID: 1297724638}
-  m_Layer: 0
-  m_Name: GameTimeUI
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &1297724638
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1297724637}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: de3f2e7673f704b45b4f5ed33701e9c9, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  gameTimeSystem: {fileID: 491276036}
-  panelAnchorMin: {x: 0.5, y: 1}
-  panelAnchorMax: {x: 0.5, y: 1}
-  panelPivot: {x: 0.5, y: 1}
-  panelPosition: {x: 0, y: -16}
-  minPanelWidth: 420
-  panelColor: {r: 0.1, g: 0.1, b: 0.1, a: 0.9}
-  buttonColor: {r: 0.22, g: 0.22, b: 0.22, a: 1}
-  activeButtonColor: {r: 0.3, g: 0.48, b: 0.3, a: 1}
-  textColor: {r: 1, g: 1, b: 1, a: 1}
-  dateFontSize: 20
-  buttonFontSize: 18
---- !u!4 &1297724639
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1297724637}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -3.0534682, y: -8.272965, z: -0.12628978}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -2034,6 +1926,7 @@ SceneRoots:
   - {fileID: 1569998393}
   - {fileID: 210821149}
   - {fileID: 1260179391}
+  - {fileID: 445387131}
   - {fileID: 386972014}
   - {fileID: 1798878593}
   - {fileID: 727356790}
@@ -2045,6 +1938,3 @@ SceneRoots:
   - {fileID: 1935212631}
   - {fileID: 238568899}
   - {fileID: 879599341}
-  - {fileID: 491276037}
-  - {fileID: 1297724639}
-  - {fileID: 662477737}

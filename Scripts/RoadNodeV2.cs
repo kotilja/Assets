@@ -298,6 +298,7 @@ public class RoadNodeV2 : MonoBehaviour
         transform.localScale = new Vector3(visualSize, visualSize, 1f);
 
         RoadNodeKeepClearMarkingV2 marking = GetComponent<RoadNodeKeepClearMarkingV2>();
+        RoadNodeCrosswalkMarkingV2 crosswalk = GetComponent<RoadNodeCrosswalkMarkingV2>();
 
         if (IsIntersection && keepIntersectionClear)
         {
@@ -311,6 +312,20 @@ public class RoadNodeV2 : MonoBehaviour
         {
             marking.ClearVisuals();
             marking.enabled = false;
+        }
+
+        if (IsIntersection)
+        {
+            if (crosswalk == null)
+                crosswalk = gameObject.AddComponent<RoadNodeCrosswalkMarkingV2>();
+
+            crosswalk.enabled = true;
+            crosswalk.SyncFromNode();
+        }
+        else if (crosswalk != null)
+        {
+            crosswalk.ClearVisuals();
+            crosswalk.enabled = false;
         }
     }
 

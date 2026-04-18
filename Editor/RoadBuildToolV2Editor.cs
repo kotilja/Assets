@@ -25,6 +25,9 @@ public class RoadBuildToolV2Editor : Editor
         if (Tool.CurrentToolMode == RoadBuildToolV2.ToolMode.LaneConnections)
             DrawLaneConnectionsPanel();
 
+        if (Tool.CurrentToolMode == RoadBuildToolV2.ToolMode.ParkingSpot)
+            DrawParkingEditorPanel();
+
         if (GUILayout.Button("Сбросить текущую цепочку"))
         {
             Tool.ClearCurrentChain();
@@ -50,68 +53,54 @@ public class RoadBuildToolV2Editor : Editor
     private void DrawModeButtons()
     {
         EditorGUILayout.LabelField("Быстрое переключение режима", EditorStyles.boldLabel);
+        DrawModeButtonRow(
+            ("Рисование", RoadBuildToolV2.ToolMode.DrawRoad),
+            ("Кривая", RoadBuildToolV2.ToolMode.DrawCurveRoad),
+            ("Home", RoadBuildToolV2.ToolMode.PlaceHome)
+        );
 
-        EditorGUILayout.BeginHorizontal();
+        DrawModeButtonRow(
+            ("Office", RoadBuildToolV2.ToolMode.PlaceOffice),
+            ("Parking", RoadBuildToolV2.ToolMode.ParkingSpot),
+            ("Удаление", RoadBuildToolV2.ToolMode.DeleteRoad),
+            ("Перекрестки", RoadBuildToolV2.ToolMode.JunctionControl)
+        );
 
-        if (GUILayout.Button("Рисование"))
+        DrawModeButtonRow(
+            ("KeepClear", RoadBuildToolV2.ToolMode.JunctionKeepClear),
+            ("Фазы", RoadBuildToolV2.ToolMode.JunctionSignals),
+            ("Манёвры", RoadBuildToolV2.ToolMode.JunctionTurns)
+        );
+
+        DrawModeButtonRow(
+            ("Связи полос", RoadBuildToolV2.ToolMode.LaneConnections)
+        );
+    }
+
+    private void DrawModeButtonRow(params (string label, RoadBuildToolV2.ToolMode mode)[] buttons)
+    {
+        if (buttons == null || buttons.Length == 0)
+            return;
+
+        for (int rowStart = 0; rowStart < buttons.Length; rowStart += 3)
         {
-            Tool.SetToolMode(RoadBuildToolV2.ToolMode.DrawRoad);
-            EditorUtility.SetDirty(Tool);
-            SceneView.RepaintAll();
-        }
+            EditorGUILayout.BeginHorizontal();
 
-        if (GUILayout.Button("Кривая"))
-        {
-            Tool.SetToolMode(RoadBuildToolV2.ToolMode.DrawCurveRoad);
-            EditorUtility.SetDirty(Tool);
-            SceneView.RepaintAll();
-        }
+            int count = Mathf.Min(3, buttons.Length - rowStart);
 
-        if (GUILayout.Button("Удаление"))
-        {
-            Tool.SetToolMode(RoadBuildToolV2.ToolMode.DeleteRoad);
-            EditorUtility.SetDirty(Tool);
-            SceneView.RepaintAll();
-        }
+            for (int i = 0; i < count; i++)
+            {
+                int index = rowStart + i;
+                if (GUILayout.Button(buttons[index].label))
+                {
+                    Tool.SetToolMode(buttons[index].mode);
+                    EditorUtility.SetDirty(Tool);
+                    SceneView.RepaintAll();
+                }
+            }
 
-        if (GUILayout.Button("Перекрестки"))
-        {
-            Tool.SetToolMode(RoadBuildToolV2.ToolMode.JunctionControl);
-            EditorUtility.SetDirty(Tool);
-            SceneView.RepaintAll();
+            EditorGUILayout.EndHorizontal();
         }
-
-        if (GUILayout.Button("KeepClear"))
-        {
-            Tool.SetToolMode(RoadBuildToolV2.ToolMode.JunctionKeepClear);
-            EditorUtility.SetDirty(Tool);
-            SceneView.RepaintAll();
-        }
-
-        EditorGUILayout.EndHorizontal();
-
-        EditorGUILayout.BeginHorizontal();
-        if (GUILayout.Button("Фазы"))
-        {
-            Tool.SetToolMode(RoadBuildToolV2.ToolMode.JunctionSignals);
-            EditorUtility.SetDirty(Tool);
-            SceneView.RepaintAll();
-        }
-        if (GUILayout.Button("Манёвры"))
-        {
-            Tool.SetToolMode(RoadBuildToolV2.ToolMode.JunctionTurns);
-            EditorUtility.SetDirty(Tool);
-            SceneView.RepaintAll();
-        }
-
-        if (GUILayout.Button("Связи полос"))
-        {
-            Tool.SetToolMode(RoadBuildToolV2.ToolMode.LaneConnections);
-            EditorUtility.SetDirty(Tool);
-            SceneView.RepaintAll();
-        }
-
-        EditorGUILayout.EndHorizontal();
     }
 
     private void DrawTurnEditorPanel()
@@ -278,6 +267,23 @@ public class RoadBuildToolV2Editor : Editor
         }
     }
 
+    private void DrawParkingEditorPanel()
+    {
+        EditorGUILayout.Space(8f);
+        EditorGUILayout.LabelField("Parking placement", EditorStyles.boldLabel);
+        EditorGUILayout.HelpBox(
+            "Click a road segment to place a parking spot on the nearest side of the road.",
+            MessageType.Info
+        );
+
+        if (Tool.SelectedParkingSegment != null)
+        {
+            EditorGUILayout.ObjectField("Segment", Tool.SelectedParkingSegment, typeof(RoadSegmentV2), true);
+            EditorGUILayout.LabelField("Side", Tool.SelectedParkingOnLeftSide ? "Left" : "Right");
+            EditorGUILayout.Vector3Field("Position", Tool.SelectedParkingPosition);
+        }
+    }
+
     private void DrawMovementToggleButton(string label, RoadLaneConnectionV2.MovementType movementType)
     {
         bool allowed = Tool.GetSelectedApproachMovementAllowed(movementType);
@@ -321,6 +327,15 @@ public class RoadBuildToolV2Editor : Editor
             case RoadBuildToolV2.ToolMode.DrawCurveRoad:
                 return "Режим кривой: ЛКМ точка A — старт, ЛКМ точка B — точка изгиба, затем конец дороги идет за курсором. Третий ЛКМ фиксирует конец C. При continueChain следующая кривая продолжается симметрично.";
 
+            case RoadBuildToolV2.ToolMode.PlaceHome:
+                return "Home mode: first click sets the first corner, second click creates a residential rectangle.";
+
+            case RoadBuildToolV2.ToolMode.PlaceOffice:
+                return "Office mode: first click sets the first corner, second click creates an office rectangle.";
+
+            case RoadBuildToolV2.ToolMode.ParkingSpot:
+                return "Parking mode: click a road segment to create a parking spot on the nearest side.";
+
             case RoadBuildToolV2.ToolMode.DeleteRoad:
                 return "Режим удаления: ЛКМ удаляет ближайший сегмент дороги.";
 
@@ -357,6 +372,12 @@ public class RoadBuildToolV2Editor : Editor
 
         Vector3 rawWorldPosition = GetWorldPointOnPlane(e.mousePosition);
         Vector3 worldPosition = Tool.GetPreviewWorldPosition(rawWorldPosition);
+        Vector3 clickWorldPosition =
+            Tool.CurrentToolMode == RoadBuildToolV2.ToolMode.ParkingSpot ||
+            Tool.CurrentToolMode == RoadBuildToolV2.ToolMode.PlaceHome ||
+            Tool.CurrentToolMode == RoadBuildToolV2.ToolMode.PlaceOffice
+            ? rawWorldPosition
+            : worldPosition;
 
         DrawPreview(worldPosition);
         DrawDrawAssistOverlay(rawWorldPosition, worldPosition);
@@ -368,7 +389,7 @@ public class RoadBuildToolV2Editor : Editor
         {
             Undo.IncrementCurrentGroup();
 
-            Tool.HandleSceneClick(worldPosition);
+            Tool.HandleSceneClick(clickWorldPosition);
 
             EditorUtility.SetDirty(Tool);
             EditorUtility.SetDirty(Tool.Network);
@@ -426,6 +447,27 @@ public class RoadBuildToolV2Editor : Editor
                 }
                 break;
 
+            case RoadBuildToolV2.ToolMode.PlaceHome:
+                DrawBuildingPreview(worldPosition, Tool.CurrentBuildingStartPoint, Tool.HasBuildingStartPoint, Tool.HomePreviewColor);
+                break;
+
+            case RoadBuildToolV2.ToolMode.PlaceOffice:
+                DrawBuildingPreview(worldPosition, Tool.CurrentBuildingStartPoint, Tool.HasBuildingStartPoint, Tool.OfficePreviewColor);
+                break;
+
+            case RoadBuildToolV2.ToolMode.ParkingSpot:
+                Handles.color = Tool.ParkingPreviewColor;
+                Handles.DrawSolidDisc(worldPosition, Vector3.forward, 0.07f);
+                Handles.DrawWireDisc(worldPosition, Vector3.forward, 0.22f);
+
+                if (Tool.SelectedParkingSegment != null)
+                {
+                    Handles.color = Tool.ParkingPreviewColor;
+                    Handles.DrawLine(Tool.SelectedParkingPosition, worldPosition);
+                    Handles.DrawWireDisc(Tool.SelectedParkingPosition, Vector3.forward, 0.12f);
+                }
+                break;
+
             case RoadBuildToolV2.ToolMode.DeleteRoad:
                 Handles.color = Tool.DeletePreviewColor;
                 Handles.DrawSolidDisc(worldPosition, Vector3.forward, 0.06f);
@@ -462,6 +504,26 @@ public class RoadBuildToolV2Editor : Editor
                 Handles.DrawWireDisc(worldPosition, Vector3.forward, Tool.JunctionPickDistance);
                 break;
         }
+    }
+
+    private void DrawBuildingPreview(Vector3 worldPosition, Vector3 startPoint, bool hasStartPoint, Color color)
+    {
+        Handles.color = color;
+        Handles.DrawSolidDisc(worldPosition, Vector3.forward, 0.06f);
+
+        if (!hasStartPoint)
+            return;
+
+        Vector3 p0 = new Vector3(startPoint.x, startPoint.y, 0f);
+        Vector3 p1 = new Vector3(worldPosition.x, startPoint.y, 0f);
+        Vector3 p2 = new Vector3(worldPosition.x, worldPosition.y, 0f);
+        Vector3 p3 = new Vector3(startPoint.x, worldPosition.y, 0f);
+
+        Handles.DrawSolidRectangleWithOutline(
+            new Vector3[] { p0, p1, p2, p3 },
+            new Color(color.r, color.g, color.b, 0.12f),
+            color
+        );
     }
 
     private void DrawDrawAssistOverlay(Vector3 rawWorldPosition, Vector3 snappedWorldPosition)
