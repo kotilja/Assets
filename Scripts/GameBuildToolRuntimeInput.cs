@@ -48,6 +48,10 @@ public class GameBuildToolRuntimeInput : MonoBehaviour
         if (!TryGetMouseWorldPoint(out Vector3 worldPoint))
             return;
 
+        if (buildTool.CurrentToolMode == RoadBuildToolV2.ToolMode.JunctionSignals &&
+            buildTool.TryHandleSignalPhaseClick(worldPoint))
+            return;
+
         buildTool.HandleSceneClick(worldPoint);
     }
 
@@ -60,6 +64,7 @@ public class GameBuildToolRuntimeInput : MonoBehaviour
         buildTool.ClearTurnSelection();
         buildTool.ClearLaneConnectionSelection();
         buildTool.ClearSignalSelection();
+        buildTool.ClearActiveTool();
     }
 
     private bool IsPointerOverUI()

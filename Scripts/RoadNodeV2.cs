@@ -299,6 +299,7 @@ public class RoadNodeV2 : MonoBehaviour
 
         RoadNodeKeepClearMarkingV2 marking = GetComponent<RoadNodeKeepClearMarkingV2>();
         RoadNodeCrosswalkMarkingV2 crosswalk = GetComponent<RoadNodeCrosswalkMarkingV2>();
+        RoadNodeDeadEndWarningV2 deadEndWarning = GetComponent<RoadNodeDeadEndWarningV2>();
 
         if (IsIntersection && keepIntersectionClear)
         {
@@ -327,6 +328,32 @@ public class RoadNodeV2 : MonoBehaviour
             crosswalk.ClearVisuals();
             crosswalk.enabled = false;
         }
+
+        if (ShouldShowOneWayDeadEndWarning())
+        {
+            if (deadEndWarning == null)
+                deadEndWarning = gameObject.AddComponent<RoadNodeDeadEndWarningV2>();
+
+            deadEndWarning.enabled = true;
+            deadEndWarning.SyncFromNode();
+        }
+        else if (deadEndWarning != null)
+        {
+            deadEndWarning.ClearVisuals();
+            deadEndWarning.enabled = false;
+        }
+    }
+
+    private bool ShouldShowOneWayDeadEndWarning()
+    {
+        if (connectedSegments.Count != 1)
+            return false;
+
+        RoadSegmentV2 segment = connectedSegments[0];
+        if (segment == null || !segment.IsOneWay)
+            return false;
+
+        return segment.EndNode == this;
     }
 
     private Color GetNodeColor()

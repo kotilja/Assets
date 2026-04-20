@@ -8,7 +8,7 @@ using UnityEditor;
 [ExecuteAlways]
 public class RoadNodeSignalV2 : MonoBehaviour
 {
-    private enum LampState
+    public enum LampState
     {
         Red,
         Yellow,
@@ -27,22 +27,22 @@ public class RoadNodeSignalV2 : MonoBehaviour
     public class SignalPhaseRule
     {
         public RoadSegmentV2 incomingSegment;
-        public bool allowStraight = false;
-        public bool allowLeft = false;
-        public bool allowRight = false;
+        public LampState straightState = LampState.Red;
+        public LampState leftState = LampState.Red;
+        public LampState rightState = LampState.Red;
 
         public bool Allows(RoadLaneConnectionV2.MovementType movementType)
         {
             switch (movementType)
             {
                 case RoadLaneConnectionV2.MovementType.Straight:
-                    return allowStraight;
+                    return straightState == LampState.Green;
 
                 case RoadLaneConnectionV2.MovementType.Left:
-                    return allowLeft;
+                    return leftState == LampState.Green;
 
                 case RoadLaneConnectionV2.MovementType.Right:
-                    return allowRight;
+                    return rightState == LampState.Green;
 
                 default:
                     return false;
@@ -51,7 +51,59 @@ public class RoadNodeSignalV2 : MonoBehaviour
 
         public bool HasAnyGreen()
         {
-            return allowStraight || allowLeft || allowRight;
+            return straightState == LampState.Green ||
+                   leftState == LampState.Green ||
+                   rightState == LampState.Green;
+        }
+
+        public bool HasAnyYellow()
+        {
+            return straightState == LampState.Yellow ||
+                   leftState == LampState.Yellow ||
+                   rightState == LampState.Yellow;
+        }
+
+        public LampState GetState(RoadLaneConnectionV2.MovementType movementType)
+        {
+            switch (movementType)
+            {
+                case RoadLaneConnectionV2.MovementType.Straight:
+                    return straightState;
+
+                case RoadLaneConnectionV2.MovementType.Left:
+                    return leftState;
+
+                case RoadLaneConnectionV2.MovementType.Right:
+                    return rightState;
+
+                default:
+                    return LampState.Red;
+            }
+        }
+
+        public void CycleState(RoadLaneConnectionV2.MovementType movementType)
+        {
+            LampState current = GetState(movementType);
+            LampState next = current == LampState.Red
+                ? LampState.Yellow
+                : current == LampState.Yellow
+                    ? LampState.Green
+                    : LampState.Red;
+
+            switch (movementType)
+            {
+                case RoadLaneConnectionV2.MovementType.Straight:
+                    straightState = next;
+                    break;
+
+                case RoadLaneConnectionV2.MovementType.Left:
+                    leftState = next;
+                    break;
+
+                case RoadLaneConnectionV2.MovementType.Right:
+                    rightState = next;
+                    break;
+            }
         }
     }
 
@@ -287,9 +339,9 @@ public class RoadNodeSignalV2 : MonoBehaviour
                 newPhase.rules.Add(new SignalPhaseRule
                 {
                     incomingSegment = rule.incomingSegment,
-                    allowStraight = rule.allowStraight,
-                    allowLeft = rule.allowLeft,
-                    allowRight = rule.allowRight
+                    straightState = rule.straightState,
+                    leftState = rule.leftState,
+                    rightState = rule.rightState
                 });
             }
         }
@@ -328,6 +380,13 @@ public class RoadNodeSignalV2 : MonoBehaviour
         return rule.Allows(movementType);
     }
 
+    public LampState GetMovementStateInCurrentPhase(RoadSegmentV2 incomingSegment, RoadLaneConnectionV2.MovementType movementType)
+    {
+        SignalPhase phase = GetCurrentPhase();
+        SignalPhaseRule rule = FindRuleForSegment(phase, incomingSegment);
+        return rule != null ? rule.GetState(movementType) : LampState.Red;
+    }
+
     public void ToggleMovementInCurrentPhase(RoadSegmentV2 incomingSegment, RoadLaneConnectionV2.MovementType movementType)
     {
         SignalPhase phase = GetCurrentPhase();
@@ -338,21 +397,29 @@ public class RoadNodeSignalV2 : MonoBehaviour
         if (rule == null)
             return;
 
-        switch (movementType)
-        {
-            case RoadLaneConnectionV2.MovementType.Straight:
-                rule.allowStraight = !rule.allowStraight;
-                break;
+        rule.CycleState(movementType);
 
-            case RoadLaneConnectionV2.MovementType.Left:
-                rule.allowLeft = !rule.allowLeft;
-                break;
+        RefreshSignalVisuals();
+    }
 
-            case RoadLaneConnectionV2.MovementType.Right:
-                rule.allowRight = !rule.allowRight;
-                break;
-        }
+    public void CycleMovementStateInCurrentPhase(RoadSegmentV2 incomingSegment, RoadLaneConnectionV2.MovementType movementType)
+    {
+        ToggleMovementInCurrentPhase(incomingSegment, movementType);
+    }
 
+    public float GetCurrentPhaseDuration()
+    {
+        SignalPhase phase = GetCurrentPhase();
+        return phase != null ? phase.duration : 0f;
+    }
+
+    public void SetCurrentPhaseDuration(float duration)
+    {
+        SignalPhase phase = GetCurrentPhase();
+        if (phase == null)
+            return;
+
+        phase.duration = Mathf.Max(0.2f, duration);
         RefreshSignalVisuals();
     }
 
@@ -490,9 +557,9 @@ public class RoadNodeSignalV2 : MonoBehaviour
                     phase.rules.Add(new SignalPhaseRule
                     {
                         incomingSegment = incomingSegment,
-                        allowStraight = false,
-                        allowLeft = false,
-                        allowRight = false
+                        straightState = LampState.Red,
+                        leftState = LampState.Red,
+                        rightState = LampState.Red
                     });
                 }
             }
@@ -563,16 +630,16 @@ public class RoadNodeSignalV2 : MonoBehaviour
             phase.rules.Add(new SignalPhaseRule
             {
                 incomingSegment = segment,
-                allowStraight = active,
-                allowLeft = active,
-                allowRight = active
+                straightState = active ? LampState.Green : LampState.Red,
+                leftState = active ? LampState.Green : LampState.Red,
+                rightState = active ? LampState.Green : LampState.Red
             });
         }
 
         return phase;
     }
 
-    private List<RoadSegmentV2> GetIncomingSegments()
+    public List<RoadSegmentV2> GetIncomingSegments()
     {
         List<RoadSegmentV2> result = new List<RoadSegmentV2>();
 
@@ -915,7 +982,13 @@ public class RoadNodeSignalV2 : MonoBehaviour
         if (rule == null)
             return LampState.Red;
 
-        return rule.HasAnyGreen() ? LampState.Green : LampState.Red;
+        if (rule.HasAnyGreen())
+            return LampState.Green;
+
+        if (rule.HasAnyYellow())
+            return LampState.Yellow;
+
+        return LampState.Red;
     }
 
     private Color GetLampColor(LampState state)

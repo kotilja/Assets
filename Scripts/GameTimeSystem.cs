@@ -23,7 +23,7 @@ public class GameTimeSystem : MonoBehaviour
     [SerializeField] private int startYear = 2000;
     [SerializeField] private int startMonth = 3;
     [SerializeField] private int startDay = 1;
-    [SerializeField] private int startHour = 0;
+    [SerializeField] private int startHour = 12;
     [SerializeField] private int startMinute = 0;
     [SerializeField] private int daysPerMonth = 7;
     [SerializeField] private int monthsPerYear = 12;

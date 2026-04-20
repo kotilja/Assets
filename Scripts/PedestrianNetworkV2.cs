@@ -32,6 +32,7 @@ public class PedestrianNetworkV2 : MonoBehaviour
     {
         public PedestrianNodeDataV2 node;
         public RoadSegmentV2 segment;
+        public Vector3 direction;
     }
 
     [Header("Sources")]
@@ -74,6 +75,7 @@ public class PedestrianNetworkV2 : MonoBehaviour
         nextNodeId = 1;
 
         BuildFromRoadSidewalks();
+        BuildSimpleJointOuterConnections();
         BuildFromPedestrianPaths();
         BuildIntersectionCrosswalks();
         BuildParkingAnchors();
@@ -375,8 +377,25 @@ public class PedestrianNetworkV2 : MonoBehaviour
                 PedestrianNodeDataV2 leftNode = GetOrCreateNode(leftExit);
                 PedestrianNodeDataV2 rightNode = GetOrCreateNode(rightExit);
 
-                cornerCandidates.Add(new IntersectionCornerCandidate { node = leftNode, segment = segment });
-                cornerCandidates.Add(new IntersectionCornerCandidate { node = rightNode, segment = segment });
+                if (TryGetSidewalkEndpoint(segment, roadNode, true, out Vector3 _, out Vector3 leftDirection))
+                {
+                    cornerCandidates.Add(new IntersectionCornerCandidate
+                    {
+                        node = leftNode,
+                        segment = segment,
+                        direction = leftDirection
+                    });
+                }
+
+                if (TryGetSidewalkEndpoint(segment, roadNode, false, out Vector3 _, out Vector3 rightDirection))
+                {
+                    cornerCandidates.Add(new IntersectionCornerCandidate
+                    {
+                        node = rightNode,
+                        segment = segment,
+                        direction = rightDirection
+                    });
+                }
 
                 AddSingleDirectionEdge(rawLeftNode, leftNode, false);
                 AddSingleDirectionEdge(rawRightNode, rightNode, false);
@@ -649,16 +668,48 @@ public class PedestrianNetworkV2 : MonoBehaviour
             if (currentSegment == null || nextSegment == null || currentSegment == nextSegment)
                 continue;
 
-            if (!TryGetNearestCornerPair(cornerCandidates, currentSegment, nextSegment, out PedestrianNodeDataV2 currentNode, out PedestrianNodeDataV2 nextNode))
+            if (!TryGetNearestCornerPair(
+                cornerCandidates,
+                currentSegment,
+                nextSegment,
+                out IntersectionCornerCandidate currentCandidate,
+                out IntersectionCornerCandidate nextCandidate))
                 continue;
 
+            PedestrianNodeDataV2 currentNode = currentCandidate.node;
+            PedestrianNodeDataV2 nextNode = nextCandidate.node;
             float distance = Vector3.Distance(currentNode.position, nextNode.position);
             float maxCornerDistance = GetMaxCornerConnectionDistance(roadNode, currentSegment, nextSegment);
-            if (distance > maxCornerDistance)
-                continue;
 
-            List<Vector3> polyline = new List<Vector3> { currentNode.position, nextNode.position };
-            AddBidirectionalEdge(currentNode.id, nextNode.id, polyline, distance, false);
+            if (distance <= maxCornerDistance)
+            {
+                List<Vector3> polyline = new List<Vector3> { currentNode.position, nextNode.position };
+                AddBidirectionalEdge(currentNode.id, nextNode.id, polyline, distance, false);
+                continue;
+            }
+
+            Vector3 apexPoint = GetOuterJointApexPoint(
+                center,
+                currentNode.position,
+                currentCandidate.direction,
+                nextNode.position,
+                nextCandidate.direction);
+
+            PedestrianNodeDataV2 apexNode = CreateStrictNode(apexPoint);
+
+            AddBidirectionalEdge(
+                currentNode.id,
+                apexNode.id,
+                new List<Vector3> { currentNode.position, apexNode.position },
+                Vector3.Distance(currentNode.position, apexNode.position),
+                false);
+
+            AddBidirectionalEdge(
+                apexNode.id,
+                nextNode.id,
+                new List<Vector3> { apexNode.position, nextNode.position },
+                Vector3.Distance(apexNode.position, nextNode.position),
+                false);
         }
     }
 
@@ -666,11 +717,11 @@ public class PedestrianNetworkV2 : MonoBehaviour
         List<IntersectionCornerCandidate> cornerCandidates,
         RoadSegmentV2 firstSegment,
         RoadSegmentV2 secondSegment,
-        out PedestrianNodeDataV2 firstNode,
-        out PedestrianNodeDataV2 secondNode)
+        out IntersectionCornerCandidate firstCorner,
+        out IntersectionCornerCandidate secondCorner)
     {
-        firstNode = null;
-        secondNode = null;
+        firstCorner = null;
+        secondCorner = null;
 
         if (cornerCandidates == null || firstSegment == null || secondSegment == null)
             return false;
@@ -694,12 +745,206 @@ public class PedestrianNetworkV2 : MonoBehaviour
                     continue;
 
                 bestDistance = distance;
-                firstNode = firstCandidate.node;
-                secondNode = secondCandidate.node;
+                firstCorner = firstCandidate;
+                secondCorner = secondCandidate;
             }
         }
 
-        return firstNode != null && secondNode != null;
+        return firstCorner != null && secondCorner != null;
+    }
+
+    private void BuildSimpleJointOuterConnections()
+    {
+        if (roadNetwork == null)
+            roadNetwork = GetComponent<RoadNetworkV2>();
+
+        if (roadNetwork == null)
+            return;
+
+        IReadOnlyList<RoadNodeV2> roadNodes = roadNetwork.Nodes;
+        for (int i = 0; i < roadNodes.Count; i++)
+        {
+            RoadNodeV2 node = roadNodes[i];
+            if (node == null || node.ConnectedSegments == null || node.ConnectedSegments.Count != 2)
+                continue;
+
+            RoadSegmentV2 firstSegment = node.ConnectedSegments[0];
+            RoadSegmentV2 secondSegment = node.ConnectedSegments[1];
+            if (firstSegment == null || secondSegment == null)
+                continue;
+
+            if (!TryGetRoadDirection(firstSegment, node, out Vector3 firstDir) ||
+                !TryGetRoadDirection(secondSegment, node, out Vector3 secondDir))
+                continue;
+
+            float jointAngle = Mathf.Abs(Vector3.SignedAngle(firstDir, secondDir, Vector3.forward));
+            if (jointAngle <= 90f)
+                continue;
+
+            if (!TryGetSidewalkEndpoint(firstSegment, node, true, out Vector3 firstLeftPoint, out Vector3 firstLeftDir) ||
+                !TryGetSidewalkEndpoint(firstSegment, node, false, out Vector3 firstRightPoint, out Vector3 firstRightDir) ||
+                !TryGetSidewalkEndpoint(secondSegment, node, true, out Vector3 secondLeftPoint, out Vector3 secondLeftDir) ||
+                !TryGetSidewalkEndpoint(secondSegment, node, false, out Vector3 secondRightPoint, out Vector3 secondRightDir))
+                continue;
+
+            bool firstLeftInside = IsPointInsideJointWedge(node.transform.position, firstDir, secondDir, firstLeftPoint);
+            bool firstRightInside = IsPointInsideJointWedge(node.transform.position, firstDir, secondDir, firstRightPoint);
+            bool secondLeftInside = IsPointInsideJointWedge(node.transform.position, firstDir, secondDir, secondLeftPoint);
+            bool secondRightInside = IsPointInsideJointWedge(node.transform.position, firstDir, secondDir, secondRightPoint);
+
+            if (firstLeftInside == firstRightInside || secondLeftInside == secondRightInside)
+                continue;
+
+            Vector3 firstOuterPoint = firstLeftInside ? firstRightPoint : firstLeftPoint;
+            Vector3 firstOuterDir = firstLeftInside ? firstRightDir : firstLeftDir;
+            Vector3 secondOuterPoint = secondLeftInside ? secondRightPoint : secondLeftPoint;
+            Vector3 secondOuterDir = secondLeftInside ? secondRightDir : secondLeftDir;
+
+            Vector3 apexPoint = GetOuterJointApexPoint(node.transform.position, firstOuterPoint, firstOuterDir, secondOuterPoint, secondOuterDir);
+            PedestrianNodeDataV2 apexNode = CreateStrictNode(apexPoint);
+            PedestrianNodeDataV2 firstNode = GetOrCreateNode(firstOuterPoint);
+            PedestrianNodeDataV2 secondNode = GetOrCreateNode(secondOuterPoint);
+
+            AddBidirectionalEdge(
+                firstNode.id,
+                apexNode.id,
+                new List<Vector3> { firstNode.position, apexNode.position },
+                Vector3.Distance(firstNode.position, apexNode.position),
+                false);
+
+            AddBidirectionalEdge(
+                secondNode.id,
+                apexNode.id,
+                new List<Vector3> { secondNode.position, apexNode.position },
+                Vector3.Distance(secondNode.position, apexNode.position),
+                false);
+        }
+    }
+
+    private bool TryGetSidewalkEndpoint(
+        RoadSegmentV2 segment,
+        RoadNodeV2 node,
+        bool leftSide,
+        out Vector3 point,
+        out Vector3 direction)
+    {
+        point = Vector3.zero;
+        direction = Vector3.zero;
+
+        if (segment == null || node == null)
+            return false;
+
+        List<Vector3> polyline = leftSide
+            ? segment.GetLeftSidewalkPolylineWorld()
+            : segment.GetRightSidewalkPolylineWorld();
+
+        if (polyline == null || polyline.Count < 2)
+            return false;
+
+        if (segment.StartNode == node)
+        {
+            point = polyline[0];
+            direction = (polyline[1] - polyline[0]).normalized;
+            return direction.sqrMagnitude > 0.0001f;
+        }
+
+        if (segment.EndNode == node)
+        {
+            point = polyline[polyline.Count - 1];
+            direction = (polyline[polyline.Count - 2] - polyline[polyline.Count - 1]).normalized;
+            return direction.sqrMagnitude > 0.0001f;
+        }
+
+        return false;
+    }
+
+    private bool TryGetRoadDirection(RoadSegmentV2 segment, RoadNodeV2 node, out Vector3 direction)
+    {
+        direction = Vector3.zero;
+
+        if (segment == null || node == null)
+            return false;
+
+        if (segment.StartNode == node && segment.EndNode != null)
+            direction = (segment.EndNode.transform.position - node.transform.position).normalized;
+        else if (segment.EndNode == node && segment.StartNode != null)
+            direction = (segment.StartNode.transform.position - node.transform.position).normalized;
+
+        direction.z = 0f;
+        return direction.sqrMagnitude > 0.0001f;
+    }
+
+    private bool IsPointInsideJointWedge(Vector3 center, Vector3 firstDir, Vector3 secondDir, Vector3 point)
+    {
+        Vector3 toPoint = point - center;
+        toPoint.z = 0f;
+
+        if (toPoint.sqrMagnitude < 0.0001f)
+            return false;
+
+        float angleA = Mathf.Atan2(firstDir.y, firstDir.x) * Mathf.Rad2Deg;
+        float angleB = Mathf.Atan2(secondDir.y, secondDir.x) * Mathf.Rad2Deg;
+        float pointAngle = Mathf.Atan2(toPoint.y, toPoint.x) * Mathf.Rad2Deg;
+        float deltaAB = Mathf.DeltaAngle(angleA, angleB);
+        float deltaAP = Mathf.DeltaAngle(angleA, pointAngle);
+
+        if (Mathf.Abs(deltaAB) < 1f)
+            return false;
+
+        if (deltaAB > 0f)
+            return deltaAP > 0f && deltaAP < deltaAB;
+
+        return deltaAP < 0f && deltaAP > deltaAB;
+    }
+
+    private Vector3 GetOuterJointApexPoint(
+        Vector3 center,
+        Vector3 firstPoint,
+        Vector3 firstDir,
+        Vector3 secondPoint,
+        Vector3 secondDir)
+    {
+        if (TryGetLineIntersection(firstPoint, firstDir, secondPoint, secondDir, out Vector3 intersection))
+        {
+            float maxRadius = Mathf.Max(
+                Vector3.Distance(center, firstPoint),
+                Vector3.Distance(center, secondPoint)) + 3f;
+
+            if (Vector3.Distance(center, intersection) <= maxRadius)
+            {
+                intersection.z = 0f;
+                return intersection;
+            }
+        }
+
+        Vector3 midpoint = (firstPoint + secondPoint) * 0.5f;
+        midpoint.z = 0f;
+        return midpoint;
+    }
+
+    private bool TryGetLineIntersection(
+        Vector3 pointA,
+        Vector3 dirA,
+        Vector3 pointB,
+        Vector3 dirB,
+        out Vector3 intersection)
+    {
+        intersection = Vector3.zero;
+
+        Vector2 p = new Vector2(pointA.x, pointA.y);
+        Vector2 r = new Vector2(dirA.x, dirA.y);
+        Vector2 q = new Vector2(pointB.x, pointB.y);
+        Vector2 s = new Vector2(dirB.x, dirB.y);
+
+        float cross = r.x * s.y - r.y * s.x;
+        if (Mathf.Abs(cross) <= 0.0001f)
+            return false;
+
+        Vector2 qp = q - p;
+        float t = (qp.x * s.y - qp.y * s.x) / cross;
+        Vector2 hit = p + r * t;
+        intersection = new Vector3(hit.x, hit.y, 0f);
+        return true;
     }
 
     private float GetMaxCornerConnectionDistance(

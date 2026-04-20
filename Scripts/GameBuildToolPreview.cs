@@ -20,6 +20,8 @@ public class GameBuildToolPreview : MonoBehaviour
     private LineRenderer secondaryRenderer;
     private LineRenderer tertiaryRenderer;
     private Material previewMaterial;
+    private readonly List<LineRenderer> connectionRenderers = new List<LineRenderer>();
+    private readonly List<LineRenderer> signalEditorRenderers = new List<LineRenderer>();
 
     private void Awake()
     {
@@ -59,23 +61,34 @@ public class GameBuildToolPreview : MonoBehaviour
 
         switch (buildTool.CurrentToolMode)
         {
+            case RoadBuildToolV2.ToolMode.None:
+                break;
+
             case RoadBuildToolV2.ToolMode.DrawRoad:
-                DrawPoint(primaryRenderer, previewWorldPosition, buildTool.PreviewColor, pointRadius, lineWidth);
+                Color drawRoadColor = buildTool.IsCurrentRoadPreviewValid(previewWorldPosition)
+                    ? buildTool.PreviewColor
+                    : buildTool.InvalidPreviewColor;
+
+                DrawPoint(primaryRenderer, previewWorldPosition, drawRoadColor, pointRadius, lineWidth);
 
                 if (buildTool.HasCurrentStartNode)
                 {
-                    DrawLine(secondaryRenderer, buildTool.CurrentStartPosition, previewWorldPosition, buildTool.PreviewColor, lineWidth);
-                    DrawCircle(tertiaryRenderer, buildTool.CurrentStartPosition, buildTool.SnapDistance, buildTool.PreviewColor, circleLineWidth);
+                    DrawLine(secondaryRenderer, buildTool.CurrentStartPosition, previewWorldPosition, drawRoadColor, lineWidth);
+                    DrawCircle(tertiaryRenderer, buildTool.CurrentStartPosition, buildTool.SnapDistance, drawRoadColor, circleLineWidth);
                 }
                 break;
 
             case RoadBuildToolV2.ToolMode.DrawCurveRoad:
-                DrawPoint(primaryRenderer, previewWorldPosition, buildTool.PreviewColor, pointRadius, lineWidth);
+                Color drawCurveColor = buildTool.IsCurrentRoadPreviewValid(previewWorldPosition)
+                    ? buildTool.PreviewColor
+                    : buildTool.InvalidPreviewColor;
+
+                DrawPoint(primaryRenderer, previewWorldPosition, drawCurveColor, pointRadius, lineWidth);
 
                 if (buildTool.HasCurrentStartNode && !buildTool.HasCurveControlPoint)
                 {
-                    DrawLine(secondaryRenderer, buildTool.CurrentStartPosition, previewWorldPosition, buildTool.PreviewColor, lineWidth);
-                    DrawCircle(tertiaryRenderer, buildTool.CurrentStartPosition, buildTool.SnapDistance, buildTool.PreviewColor, circleLineWidth);
+                    DrawLine(secondaryRenderer, buildTool.CurrentStartPosition, previewWorldPosition, drawCurveColor, lineWidth);
+                    DrawCircle(tertiaryRenderer, buildTool.CurrentStartPosition, buildTool.SnapDistance, drawCurveColor, circleLineWidth);
                 }
                 else if (buildTool.HasCurrentStartNode && buildTool.HasCurveControlPoint)
                 {
@@ -84,13 +97,13 @@ public class GameBuildToolPreview : MonoBehaviour
                         buildTool.CurrentStartPosition,
                         buildTool.CurrentCurveControlPoint,
                         previewWorldPosition,
-                        buildTool.PreviewColor,
+                        drawCurveColor,
                         lineWidth,
                         curveSamples
                     );
 
-                    DrawLine(secondaryRenderer, buildTool.CurrentStartPosition, buildTool.CurrentCurveControlPoint, buildTool.PreviewColor, circleLineWidth);
-                    DrawLine(tertiaryRenderer, buildTool.CurrentCurveControlPoint, previewWorldPosition, buildTool.PreviewColor, circleLineWidth);
+                    DrawLine(secondaryRenderer, buildTool.CurrentStartPosition, buildTool.CurrentCurveControlPoint, drawCurveColor, circleLineWidth);
+                    DrawLine(tertiaryRenderer, buildTool.CurrentCurveControlPoint, previewWorldPosition, drawCurveColor, circleLineWidth);
                 }
                 break;
 
@@ -118,9 +131,14 @@ public class GameBuildToolPreview : MonoBehaviour
 
             case RoadBuildToolV2.ToolMode.JunctionControl:
             case RoadBuildToolV2.ToolMode.JunctionKeepClear:
+                DrawPoint(primaryRenderer, rawWorldPosition, buildTool.JunctionPreviewColor, pointRadius, lineWidth);
+                DrawCircle(secondaryRenderer, rawWorldPosition, buildTool.JunctionPickDistance, buildTool.JunctionPreviewColor, circleLineWidth);
+                break;
+
             case RoadBuildToolV2.ToolMode.JunctionSignals:
                 DrawPoint(primaryRenderer, rawWorldPosition, buildTool.JunctionPreviewColor, pointRadius, lineWidth);
                 DrawCircle(secondaryRenderer, rawWorldPosition, buildTool.JunctionPickDistance, buildTool.JunctionPreviewColor, circleLineWidth);
+                DrawSignalPhaseEditor();
                 break;
 
             case RoadBuildToolV2.ToolMode.JunctionTurns:
@@ -131,8 +149,73 @@ public class GameBuildToolPreview : MonoBehaviour
             case RoadBuildToolV2.ToolMode.LaneConnections:
                 DrawPoint(primaryRenderer, rawWorldPosition, buildTool.TurnEditPreviewColor, pointRadius, lineWidth);
                 DrawCircle(secondaryRenderer, rawWorldPosition, buildTool.LanePickDistance, buildTool.TurnEditPreviewColor, circleLineWidth);
+                DrawSelectedLaneConnectionCurves();
                 break;
         }
+    }
+
+    private void DrawSelectedLaneConnectionCurves()
+    {
+        if (buildTool == null || buildTool.Network == null)
+            return;
+
+        RoadNodeV2 node = buildTool.SelectedLaneConnectionNode;
+        if (node == null && buildTool.SelectedFromLane != null)
+            node = buildTool.SelectedFromLane.toNode;
+
+        if (node == null)
+            return;
+
+        int rendererIndex = 0;
+        IReadOnlyList<RoadLaneConnectionV2> allConnections = buildTool.Network.AllConnections;
+
+        for (int i = 0; i < allConnections.Count; i++)
+        {
+            RoadLaneConnectionV2 connection = allConnections[i];
+            if (connection == null || !connection.IsValid)
+                continue;
+
+            if (connection.connectionKind != RoadLaneConnectionV2.ConnectionKind.Junction)
+                continue;
+
+            if (connection.junctionNode != node)
+                continue;
+
+            LineRenderer renderer = GetConnectionRenderer(rendererIndex++);
+            DrawConnectionCurve(renderer, connection, GetConnectionColor(connection), lineWidth);
+        }
+    }
+
+    private void DrawSignalPhaseEditor()
+    {
+        if (buildTool == null || buildTool.SelectedSignal == null)
+            return;
+
+        int rendererIndex = 0;
+        List<RoadSegmentV2> incomingSegments = buildTool.SelectedSignalIncomingSegments;
+
+        for (int i = 0; i < incomingSegments.Count; i++)
+        {
+            RoadSegmentV2 segment = incomingSegments[i];
+            if (segment == null)
+                continue;
+
+            rendererIndex = DrawSignalMovementCircle(rendererIndex, segment, RoadLaneConnectionV2.MovementType.Left);
+            rendererIndex = DrawSignalMovementCircle(rendererIndex, segment, RoadLaneConnectionV2.MovementType.Straight);
+            rendererIndex = DrawSignalMovementCircle(rendererIndex, segment, RoadLaneConnectionV2.MovementType.Right);
+        }
+    }
+
+    private int DrawSignalMovementCircle(int rendererIndex, RoadSegmentV2 segment, RoadLaneConnectionV2.MovementType movementType)
+    {
+        if (!buildTool.TryGetSignalMovementEditorPosition(segment, movementType, out Vector3 position))
+            return rendererIndex;
+
+        RoadNodeSignalV2.LampState state = buildTool.GetSignalMovementState(segment, movementType);
+        Color color = GetSignalStateColor(state);
+        LineRenderer renderer = GetSignalEditorRenderer(rendererIndex++);
+        DrawCircle(renderer, position, buildTool.SignalEditorPickRadius, color, circleLineWidth * 1.35f);
+        return rendererIndex;
     }
 
     private void DrawLine(LineRenderer renderer, Vector3 a, Vector3 b, Color color, float width)
@@ -230,6 +313,27 @@ public class GameBuildToolPreview : MonoBehaviour
         }
     }
 
+    private void DrawConnectionCurve(LineRenderer renderer, RoadLaneConnectionV2 connection, Color color, float width)
+    {
+        if (renderer == null || connection == null)
+            return;
+
+        List<Vector3> points = connection.curvePoints;
+        if (points == null || points.Count < 2)
+            return;
+
+        renderer.enabled = true;
+        renderer.loop = false;
+        renderer.positionCount = points.Count;
+        renderer.startWidth = width;
+        renderer.endWidth = width;
+        renderer.startColor = color;
+        renderer.endColor = color;
+
+        for (int i = 0; i < points.Count; i++)
+            renderer.SetPosition(i, WithOverlayZ(points[i]));
+    }
+
     private bool TryGetMouseWorldPoint(out Vector3 worldPoint)
     {
         worldPoint = Vector3.zero;
@@ -276,6 +380,32 @@ public class GameBuildToolPreview : MonoBehaviour
         return renderer;
     }
 
+    private LineRenderer GetConnectionRenderer(int index)
+    {
+        while (connectionRenderers.Count <= index)
+        {
+            string objectName = $"LaneConnectionPreview_{connectionRenderers.Count}";
+            LineRenderer renderer = EnsureRenderer(objectName, 10 + connectionRenderers.Count);
+            connectionRenderers.Add(renderer);
+        }
+
+        ConfigureRenderer(connectionRenderers[index], 10 + index);
+        return connectionRenderers[index];
+    }
+
+    private LineRenderer GetSignalEditorRenderer(int index)
+    {
+        while (signalEditorRenderers.Count <= index)
+        {
+            string objectName = $"SignalEditorPreview_{signalEditorRenderers.Count}";
+            LineRenderer renderer = EnsureRenderer(objectName, 40 + signalEditorRenderers.Count);
+            signalEditorRenderers.Add(renderer);
+        }
+
+        ConfigureRenderer(signalEditorRenderers[index], 40 + index);
+        return signalEditorRenderers[index];
+    }
+
     private void ConfigureRenderer(LineRenderer renderer, int sortingOrder)
     {
         if (renderer == null)
@@ -304,5 +434,61 @@ public class GameBuildToolPreview : MonoBehaviour
 
         if (tertiaryRenderer != null)
             tertiaryRenderer.enabled = false;
+
+        for (int i = 0; i < connectionRenderers.Count; i++)
+        {
+            if (connectionRenderers[i] != null)
+                connectionRenderers[i].enabled = false;
+        }
+
+        for (int i = 0; i < signalEditorRenderers.Count; i++)
+        {
+            if (signalEditorRenderers[i] != null)
+                signalEditorRenderers[i].enabled = false;
+        }
+    }
+
+    private Color GetConnectionColor(RoadLaneConnectionV2 connection)
+    {
+        if (connection == null)
+            return Color.magenta;
+
+        if (buildTool != null && buildTool.SelectedFromLane != null && connection.fromLane == buildTool.SelectedFromLane)
+            return Color.white;
+
+        if (connection.isManual)
+            return new Color(1f, 0.45f, 0.85f, 1f);
+
+        switch (connection.movementType)
+        {
+            case RoadLaneConnectionV2.MovementType.Straight:
+                return Color.green;
+
+            case RoadLaneConnectionV2.MovementType.Left:
+                return Color.yellow;
+
+            case RoadLaneConnectionV2.MovementType.Right:
+                return Color.cyan;
+
+            case RoadLaneConnectionV2.MovementType.UTurn:
+                return new Color(1f, 0.5f, 0.2f, 1f);
+        }
+
+        return Color.magenta;
+    }
+
+    private Color GetSignalStateColor(RoadNodeSignalV2.LampState state)
+    {
+        switch (state)
+        {
+            case RoadNodeSignalV2.LampState.Green:
+                return Color.green;
+
+            case RoadNodeSignalV2.LampState.Yellow:
+                return Color.yellow;
+
+            default:
+                return Color.red;
+        }
     }
 }

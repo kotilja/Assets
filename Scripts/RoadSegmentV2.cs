@@ -1085,14 +1085,7 @@ private void OnDestroy()
 
         if (IsSimpleJointNode(polylineStartNode))
         {
-            if (TryBuildRoundedSidewalkJoint(polylineStartNode, isLeftSidewalk, atStart: true, out List<Vector3> roundedPoints))
-            {
-                polyline.RemoveAt(0);
-
-                for (int i = roundedPoints.Count - 1; i >= 0; i--)
-                    polyline.Insert(0, roundedPoints[i]);
-            }
-            else if (!TrySnapSidewalkJointPoint(polylineStartNode, isLeftSidewalk, out Vector3 snappedPoint))
+            if (!TrySnapSidewalkJointPoint(polylineStartNode, isLeftSidewalk, out Vector3 snappedPoint))
             {
                 Vector3 dir = GetPolylineDirectionAtStart(polyline);
                 polyline[0] -= dir * overlap;
@@ -1105,14 +1098,7 @@ private void OnDestroy()
 
         if (IsSimpleJointNode(polylineEndNode))
         {
-            if (TryBuildRoundedSidewalkJoint(polylineEndNode, isLeftSidewalk, atStart: false, out List<Vector3> roundedPoints))
-            {
-                polyline.RemoveAt(polyline.Count - 1);
-
-                for (int i = 0; i < roundedPoints.Count; i++)
-                    polyline.Add(roundedPoints[i]);
-            }
-            else if (!TrySnapSidewalkJointPoint(polylineEndNode, isLeftSidewalk, out Vector3 snappedPoint))
+            if (!TrySnapSidewalkJointPoint(polylineEndNode, isLeftSidewalk, out Vector3 snappedPoint))
             {
                 Vector3 dir = GetPolylineDirectionAtEnd(polyline);
                 polyline[polyline.Count - 1] += dir * overlap;
@@ -1122,6 +1108,25 @@ private void OnDestroy()
                 polyline[polyline.Count - 1] = snappedPoint;
             }
         }
+    }
+
+    private bool TryApplySimpleJointSidewalkConnection(
+        RoadNodeV2 jointNode,
+        bool isLeftSidewalk,
+        bool atStart,
+        out List<Vector3> roundedPoints,
+        out Vector3 snappedPoint)
+    {
+        roundedPoints = null;
+        snappedPoint = Vector3.zero;
+
+        if (!TryGetSidewalkLineAtNode(jointNode, isLeftSidewalk, out Vector3 thisPoint, out Vector3 thisDirection))
+            return false;
+
+        if (IsInnerSidewalkAtSimpleJoint(jointNode, thisPoint))
+            return TrySnapSidewalkJointPoint(jointNode, isLeftSidewalk, out snappedPoint);
+
+        return TryBuildRoundedSidewalkJoint(jointNode, isLeftSidewalk, atStart, out roundedPoints);
     }
 
     private bool TryBuildRoundedSidewalkJoint(
@@ -1153,7 +1158,13 @@ private void OnDestroy()
         if (!TryGetSidewalkLineAtNode(jointNode, isLeftSidewalk, out Vector3 thisPoint, out Vector3 thisDirection))
             return false;
 
-        if (!otherSegment.TryGetMatchingSidewalkLineAtNode(jointNode, thisPoint, out Vector3 otherPoint, out Vector3 otherDirection))
+        if (!otherSegment.TryGetMatchingSidewalkLineAtNode(
+            jointNode,
+            thisPoint,
+            thisDirection,
+            preferOuterJoint: true,
+            out Vector3 otherPoint,
+            out Vector3 otherDirection))
             return false;
 
         float thisRadius = Vector3.Distance(jointNode.transform.position, thisPoint);
@@ -1223,19 +1234,29 @@ private void OnDestroy()
         if (!TryGetSidewalkLineAtNode(jointNode, isLeftSidewalk, out Vector3 thisPoint, out Vector3 thisDirection))
             return false;
 
-        if (!otherSegment.TryGetMatchingSidewalkLineAtNode(jointNode, thisPoint, out Vector3 otherPoint, out Vector3 otherDirection))
+        if (!otherSegment.TryGetMatchingSidewalkLineAtNode(
+            jointNode,
+            thisPoint,
+            thisDirection,
+            preferOuterJoint: false,
+            out Vector3 otherPoint,
+            out Vector3 otherDirection))
             return false;
 
-        if (!TryGetLineIntersection(thisPoint, thisDirection, otherPoint, otherDirection, out snappedPoint))
-            return false;
-
-        snappedPoint.z = 0f;
-        return true;
+        return TryGetSimpleJointSharedPoint(
+            jointNode,
+            thisPoint,
+            thisDirection,
+            otherPoint,
+            otherDirection,
+            out snappedPoint);
     }
 
     private bool TryGetMatchingSidewalkLineAtNode(
         RoadNodeV2 jointNode,
         Vector3 preferredPoint,
+        Vector3 preferredDirection,
+        bool preferOuterJoint,
         out Vector3 point,
         out Vector3 direction)
     {
@@ -1262,39 +1283,134 @@ private void OnDestroy()
             return true;
         }
 
-        float preferredAngle = GetAngleAroundNode(jointNode, preferredPoint);
-        float leftAngleDelta = Mathf.Abs(Mathf.DeltaAngle(preferredAngle, GetAngleAroundNode(jointNode, leftPoint)));
-        float rightAngleDelta = Mathf.Abs(Mathf.DeltaAngle(preferredAngle, GetAngleAroundNode(jointNode, rightPoint)));
+        bool preferredIsInner = IsPointInsideSimpleJointWedge(jointNode, preferredPoint);
+        bool leftIsInner = IsPointInsideSimpleJointWedge(jointNode, leftPoint);
+        bool rightIsInner = IsPointInsideSimpleJointWedge(jointNode, rightPoint);
 
-        if (leftAngleDelta < rightAngleDelta - 0.1f)
+        if (leftIsInner != rightIsInner)
         {
-            point = leftPoint;
-            direction = leftDir;
-            return true;
-        }
+            bool needInner = preferredIsInner;
 
-        if (rightAngleDelta < leftAngleDelta - 0.1f)
-        {
+            if (leftIsInner == needInner)
+            {
+                point = leftPoint;
+                direction = leftDir;
+                return true;
+            }
+
             point = rightPoint;
             direction = rightDir;
             return true;
         }
 
-        float leftDistance = Vector3.Distance(leftPoint, preferredPoint);
-        float rightDistance = Vector3.Distance(rightPoint, preferredPoint);
+        float leftScore = EvaluateSidewalkJointCandidate(
+            jointNode,
+            preferredPoint,
+            preferredDirection,
+            leftPoint,
+            leftDir,
+            preferOuterJoint);
 
-        if (leftDistance <= rightDistance)
+        float rightScore = EvaluateSidewalkJointCandidate(
+            jointNode,
+            preferredPoint,
+            preferredDirection,
+            rightPoint,
+            rightDir,
+            preferOuterJoint);
+
+        if (preferOuterJoint)
         {
-            point = leftPoint;
-            direction = leftDir;
+            if (leftScore >= rightScore)
+            {
+                point = leftPoint;
+                direction = leftDir;
+            }
+            else
+            {
+                point = rightPoint;
+                direction = rightDir;
+            }
         }
         else
         {
-            point = rightPoint;
-            direction = rightDir;
+            if (leftScore <= rightScore)
+            {
+                point = leftPoint;
+                direction = leftDir;
+            }
+            else
+            {
+                point = rightPoint;
+                direction = rightDir;
+            }
         }
 
         return true;
+    }
+
+    private bool TryGetSimpleJointSharedPoint(
+        RoadNodeV2 jointNode,
+        Vector3 thisPoint,
+        Vector3 thisDirection,
+        Vector3 otherPoint,
+        Vector3 otherDirection,
+        out Vector3 sharedPoint)
+    {
+        sharedPoint = Vector3.zero;
+
+        if (jointNode == null)
+            return false;
+
+        bool isInnerSide = IsPointInsideSimpleJointWedge(jointNode, thisPoint);
+
+        float thisRadius = Vector3.Distance(jointNode.transform.position, thisPoint);
+        float otherRadius = Vector3.Distance(jointNode.transform.position, otherPoint);
+        float maxExpectedRadius = Mathf.Max(thisRadius, otherRadius) + sidewalkWidth * 0.75f;
+
+        if (TryGetLineIntersection(thisPoint, thisDirection, otherPoint, otherDirection, out Vector3 intersection))
+        {
+            float intersectionRadius = Vector3.Distance(jointNode.transform.position, intersection);
+            if (intersectionRadius <= maxExpectedRadius)
+            {
+                sharedPoint = intersection;
+                sharedPoint.z = 0f;
+                return true;
+            }
+        }
+
+        if (isInnerSide)
+            return false;
+
+        sharedPoint = (thisPoint + otherPoint) * 0.5f;
+        sharedPoint.z = 0f;
+        return true;
+    }
+
+    private float EvaluateSidewalkJointCandidate(
+        RoadNodeV2 jointNode,
+        Vector3 preferredPoint,
+        Vector3 preferredDirection,
+        Vector3 candidatePoint,
+        Vector3 candidateDirection,
+        bool preferOuterJoint)
+    {
+        if (jointNode == null)
+            return preferOuterJoint ? float.MinValue : float.MaxValue;
+
+        float preferredAngle = GetAngleAroundNode(jointNode, preferredPoint);
+        float candidateAngle = GetAngleAroundNode(jointNode, candidatePoint);
+        float angleDelta = Mathf.Abs(Mathf.DeltaAngle(preferredAngle, candidateAngle));
+        float pointDistance = Vector3.Distance(preferredPoint, candidatePoint);
+
+        float directionPenalty = 0f;
+        if (preferredDirection.sqrMagnitude > 0.0001f && candidateDirection.sqrMagnitude > 0.0001f)
+        {
+            float dirDot = Vector3.Dot(preferredDirection.normalized, candidateDirection.normalized);
+            directionPenalty = (1f - Mathf.Clamp(dirDot, -1f, 1f)) * 10f;
+        }
+
+        return angleDelta + pointDistance * 5f + directionPenalty;
     }
 
     private float GetAngleAroundNode(RoadNodeV2 jointNode, Vector3 sidewalkPoint)
@@ -1309,6 +1425,75 @@ private void OnDestroy()
             return 0f;
 
         return Mathf.Atan2(toSidewalk.y, toSidewalk.x) * Mathf.Rad2Deg;
+    }
+
+    private bool IsPointInsideSimpleJointWedge(RoadNodeV2 jointNode, Vector3 point)
+    {
+        if (!IsSimpleJointNode(jointNode))
+            return false;
+
+        RoadSegmentV2 first = null;
+        RoadSegmentV2 second = null;
+
+        for (int i = 0; i < jointNode.ConnectedSegments.Count; i++)
+        {
+            RoadSegmentV2 candidate = jointNode.ConnectedSegments[i];
+            if (candidate == null)
+                continue;
+
+            if (first == null)
+                first = candidate;
+            else if (second == null && candidate != first)
+                second = candidate;
+        }
+
+        if (first == null || second == null)
+            return false;
+
+        if (!TryGetRoadDirectionAwayFromNode(first, jointNode, out Vector3 firstDir))
+            return false;
+
+        if (!TryGetRoadDirectionAwayFromNode(second, jointNode, out Vector3 secondDir))
+            return false;
+
+        float angleA = Mathf.Atan2(firstDir.y, firstDir.x) * Mathf.Rad2Deg;
+        float angleB = Mathf.Atan2(secondDir.y, secondDir.x) * Mathf.Rad2Deg;
+        float pointAngle = GetAngleAroundNode(jointNode, point);
+        float deltaAB = Mathf.DeltaAngle(angleA, angleB);
+        float deltaAP = Mathf.DeltaAngle(angleA, pointAngle);
+
+        if (Mathf.Abs(deltaAB) < 1f)
+            return false;
+
+        if (deltaAB > 0f)
+            return deltaAP > 0f && deltaAP < deltaAB;
+
+        return deltaAP < 0f && deltaAP > deltaAB;
+    }
+
+    private bool IsInnerSidewalkAtSimpleJoint(RoadNodeV2 jointNode, Vector3 sidewalkPoint)
+    {
+        return IsPointInsideSimpleJointWedge(jointNode, sidewalkPoint);
+    }
+
+    private bool TryGetRoadDirectionAwayFromNode(RoadSegmentV2 segment, RoadNodeV2 node, out Vector3 direction)
+    {
+        direction = Vector3.zero;
+
+        if (segment == null || node == null)
+            return false;
+
+        List<Vector3> centerPolyline = segment.BuildCenterPolyline();
+        if (centerPolyline == null || centerPolyline.Count < 2)
+            return false;
+
+        if (segment.StartNode == node)
+            direction = (centerPolyline[1] - centerPolyline[0]).normalized;
+        else if (segment.EndNode == node)
+            direction = (centerPolyline[centerPolyline.Count - 2] - centerPolyline[centerPolyline.Count - 1]).normalized * -1f;
+
+        direction.z = 0f;
+        return direction.sqrMagnitude > 0.0001f;
     }
 
     private bool TryGetSidewalkLineAtNode(

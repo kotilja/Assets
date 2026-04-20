@@ -13,7 +13,7 @@ public class GameTimeUI : MonoBehaviour
     [SerializeField] private Vector2 panelAnchorMax = new Vector2(0.5f, 1f);
     [SerializeField] private Vector2 panelPivot = new Vector2(0.5f, 1f);
     [SerializeField] private Vector2 panelPosition = new Vector2(0f, -16f);
-    [SerializeField] private float minPanelWidth = 420f;
+    [SerializeField] private float minPanelWidth = 760f;
 
     [Header("Style")]
     [SerializeField] private Color panelColor = new Color(0.1f, 0.1f, 0.1f, 0.9f);
@@ -100,8 +100,8 @@ public class GameTimeUI : MonoBehaviour
         rootPanel.sizeDelta = new Vector2(minPanelWidth, 0f);
 
         HorizontalLayoutGroup layout = rootPanel.gameObject.AddComponent<HorizontalLayoutGroup>();
-        layout.spacing = 8f;
-        layout.padding = new RectOffset(12, 12, 10, 10);
+        layout.spacing = 10f;
+        layout.padding = new RectOffset(16, 16, 10, 10);
         layout.childAlignment = TextAnchor.MiddleCenter;
         layout.childControlHeight = true;
         layout.childControlWidth = false;
@@ -112,10 +112,10 @@ public class GameTimeUI : MonoBehaviour
         fitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
         fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
-        dateText = CreateLabel(rootPanel, "Дата", dateFontSize, 250f);
-        pauseButton = CreateButton(rootPanel, "||", buttonFontSize, 44f, () => gameTimeSystem.SetPaused());
-        normalButton = CreateButton(rootPanel, ">", buttonFontSize, 44f, () => gameTimeSystem.SetNormalSpeed());
-        fastButton = CreateButton(rootPanel, ">>", buttonFontSize, 52f, () => gameTimeSystem.SetFastSpeed());
+        dateText = CreateLabel(rootPanel, "Дата", dateFontSize, 540f);
+        pauseButton = CreateButton(rootPanel, "||", buttonFontSize, 42f, () => gameTimeSystem.SetPaused());
+        normalButton = CreateButton(rootPanel, ">", buttonFontSize, 42f, () => gameTimeSystem.SetNormalSpeed());
+        fastButton = CreateButton(rootPanel, ">>", buttonFontSize, 42f, () => gameTimeSystem.SetFastSpeed());
     }
 
     private void RefreshUI()
@@ -159,7 +159,7 @@ public class GameTimeUI : MonoBehaviour
 
         LayoutElement layoutElement = labelObject.AddComponent<LayoutElement>();
         layoutElement.preferredWidth = width;
-        layoutElement.preferredHeight = 34f;
+        layoutElement.preferredHeight = 42f;
 
         Text label = labelObject.GetComponent<Text>();
         label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
@@ -180,7 +180,7 @@ public class GameTimeUI : MonoBehaviour
 
         LayoutElement layoutElement = buttonObject.AddComponent<LayoutElement>();
         layoutElement.preferredWidth = width;
-        layoutElement.preferredHeight = 34f;
+        layoutElement.preferredHeight = 42f;
 
         Image image = buttonObject.GetComponent<Image>();
         image.color = buttonColor;
