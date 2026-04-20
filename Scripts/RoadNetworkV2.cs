@@ -892,12 +892,18 @@ private void AddManualConnection(RoadNodeV2 node, RoadLaneDataV2 fromLane, RoadL
     {
         position.z = 0f;
 
-        RoadNodeV2 nearestNode = GetNearestNode(position, snapDistance);
+        RoadNodeV2 nearestNode = FindNearestNode(position, snapDistance);
 
         if (nearestNode != null)
             return nearestNode;
 
         return CreateNode(position);
+    }
+
+    public RoadNodeV2 GetNearestNode(Vector3 position, float maxDistance)
+    {
+        position.z = 0f;
+        return FindNearestNode(position, maxDistance);
     }
 
     public RoadNodeV2 GetNearestIntersectionNode(Vector3 position, float maxDistance)
@@ -1888,7 +1894,7 @@ private void DeleteNodeIfOrphaned(RoadNodeV2 node)
         return Vector3.Distance(point, projection);
     }
 
-    private RoadNodeV2 GetNearestNode(Vector3 position, float snapDistance)
+    private RoadNodeV2 FindNearestNode(Vector3 position, float snapDistance)
     {
         float bestDistance = snapDistance;
         RoadNodeV2 bestNode = null;

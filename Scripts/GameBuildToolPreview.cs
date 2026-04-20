@@ -15,6 +15,7 @@ public class GameBuildToolPreview : MonoBehaviour
     [SerializeField] private int curveSamples = 24;
     [SerializeField] private int circleSegments = 28;
     [SerializeField] private float overlayZ = -0.2f;
+    [SerializeField] private float worldSquareSize = 10000f;
 
     private LineRenderer primaryRenderer;
     private LineRenderer secondaryRenderer;
@@ -107,16 +108,23 @@ public class GameBuildToolPreview : MonoBehaviour
                 }
                 break;
 
+            case RoadBuildToolV2.ToolMode.DrawPedestrianPath:
+                Color pedestrianPathColor = buildTool.IsPedestrianPathPreviewValid(previewWorldPosition)
+                    ? buildTool.PedestrianPathPreviewColor
+                    : buildTool.InvalidPreviewColor;
+
+                DrawPoint(primaryRenderer, previewWorldPosition, pedestrianPathColor, pointRadius, lineWidth);
+
+                if (buildTool.HasPedestrianPathStart)
+                    DrawLine(secondaryRenderer, buildTool.CurrentPedestrianPathStart, previewWorldPosition, pedestrianPathColor, lineWidth);
+                break;
+
             case RoadBuildToolV2.ToolMode.PlaceHome:
-                DrawPoint(primaryRenderer, rawWorldPosition, buildTool.HomePreviewColor, pointRadius, lineWidth);
-                if (buildTool.HasBuildingStartPoint)
-                    DrawRectangle(secondaryRenderer, buildTool.CurrentBuildingStartPoint, rawWorldPosition, buildTool.HomePreviewColor, lineWidth);
+                DrawBuildingPlacementPreview(previewWorldPosition, BuildingZoneV2.BuildingType.Home, buildTool.HomePreviewColor);
                 break;
 
             case RoadBuildToolV2.ToolMode.PlaceOffice:
-                DrawPoint(primaryRenderer, rawWorldPosition, buildTool.OfficePreviewColor, pointRadius, lineWidth);
-                if (buildTool.HasBuildingStartPoint)
-                    DrawRectangle(secondaryRenderer, buildTool.CurrentBuildingStartPoint, rawWorldPosition, buildTool.OfficePreviewColor, lineWidth);
+                DrawBuildingPlacementPreview(previewWorldPosition, BuildingZoneV2.BuildingType.Office, buildTool.OfficePreviewColor);
                 break;
 
             case RoadBuildToolV2.ToolMode.ParkingSpot:
@@ -283,6 +291,57 @@ public class GameBuildToolPreview : MonoBehaviour
         renderer.SetPosition(3, WithOverlayZ(p3));
     }
 
+    private void DrawRotatedRectangle(LineRenderer renderer, Vector3 center, Vector2 size, float rotationDegrees, Color color, float width)
+    {
+        if (renderer == null)
+            return;
+
+        Vector3 half = new Vector3(size.x * 0.5f, size.y * 0.5f, 0f);
+        Quaternion rotation = Quaternion.Euler(0f, 0f, rotationDegrees);
+
+        Vector3 p0 = center + rotation * new Vector3(-half.x, -half.y, 0f);
+        Vector3 p1 = center + rotation * new Vector3(half.x, -half.y, 0f);
+        Vector3 p2 = center + rotation * new Vector3(half.x, half.y, 0f);
+        Vector3 p3 = center + rotation * new Vector3(-half.x, half.y, 0f);
+
+        renderer.enabled = true;
+        renderer.loop = true;
+        renderer.positionCount = 4;
+        renderer.startWidth = width;
+        renderer.endWidth = width;
+        renderer.startColor = color;
+        renderer.endColor = color;
+        renderer.SetPosition(0, WithOverlayZ(p0));
+        renderer.SetPosition(1, WithOverlayZ(p1));
+        renderer.SetPosition(2, WithOverlayZ(p2));
+        renderer.SetPosition(3, WithOverlayZ(p3));
+    }
+
+    private void DrawBuildingPlacementPreview(Vector3 previewWorldPosition, BuildingZoneV2.BuildingType buildingType, Color color)
+    {
+        if (buildTool == null)
+            return;
+
+        Color previewColor = buildTool.IsBuildingPlacementValid(buildingType, previewWorldPosition)
+            ? color
+            : buildTool.InvalidPreviewColor;
+
+        if (!buildTool.TryGetBuildingPlacementPose(
+            buildingType,
+            previewWorldPosition,
+            out Vector3 rootPosition,
+            out float rotationDegrees,
+            out Vector2 size,
+            out Vector3 centerOffset))
+            return;
+
+        Quaternion rotation = Quaternion.Euler(0f, 0f, rotationDegrees);
+        Vector3 footprintCenter = rootPosition + rotation * centerOffset;
+
+        DrawPoint(primaryRenderer, rootPosition, previewColor, pointRadius, lineWidth);
+        DrawRotatedRectangle(secondaryRenderer, footprintCenter, size, rotationDegrees, previewColor, lineWidth);
+    }
+
     private void DrawQuadraticCurve(
         LineRenderer renderer,
         Vector3 start,
@@ -349,7 +408,17 @@ public class GameBuildToolPreview : MonoBehaviour
 
         worldPoint = ray.GetPoint(enter);
         worldPoint.z = 0f;
+        worldPoint = ClampToWorldBounds(worldPoint);
         return true;
+    }
+
+    private Vector3 ClampToWorldBounds(Vector3 worldPoint)
+    {
+        float halfWorldSize = Mathf.Max(1f, worldSquareSize * 0.5f);
+        worldPoint.x = Mathf.Clamp(worldPoint.x, -halfWorldSize, halfWorldSize);
+        worldPoint.y = Mathf.Clamp(worldPoint.y, -halfWorldSize, halfWorldSize);
+        worldPoint.z = 0f;
+        return worldPoint;
     }
 
     private Vector3 WithOverlayZ(Vector3 point)

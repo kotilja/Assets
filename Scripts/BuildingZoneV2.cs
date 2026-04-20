@@ -17,6 +17,8 @@ public class BuildingZoneV2 : MonoBehaviour
     [SerializeField] private Vector2 size = new Vector2(2f, 2f);
     [SerializeField] private int capacity = 2;
     [SerializeField] private int occupiedSlots = 0;
+    [SerializeField] private Transform entrancePointOverride;
+    [SerializeField] private Vector3 zoneCenterOffset = Vector3.zero;
     [SerializeField] private float gizmoHeight = 0.01f;
     [SerializeField] private Color homeColor = new Color(0.35f, 0.8f, 0.45f, 0.9f);
     [SerializeField] private Color officeColor = new Color(0.35f, 0.55f, 0.95f, 0.9f);
@@ -29,8 +31,14 @@ public class BuildingZoneV2 : MonoBehaviour
     public int OccupiedSlots => occupiedSlots;
     public bool HasFreeSlot => occupiedSlots < Capacity;
     public Vector2 Size => new Vector2(Mathf.Max(0.5f, size.x), Mathf.Max(0.5f, size.y));
-    public Vector3 Position => transform.position;
-    public Vector3 EntrancePoint => GetClosestPointOnPerimeter(transform.position + Vector3.down);
+    public Vector3 CenterOffset => new Vector3(zoneCenterOffset.x, zoneCenterOffset.y, 0f);
+    public Vector3 Position => new Vector3(
+        transform.position.x + zoneCenterOffset.x,
+        transform.position.y + zoneCenterOffset.y,
+        0f);
+    public Vector3 EntrancePoint => entrancePointOverride != null
+        ? new Vector3(entrancePointOverride.position.x, entrancePointOverride.position.y, 0f)
+        : GetClosestPointOnPerimeter(transform.position + Vector3.down);
 
     public void Initialize(BuildingType type, Vector2 rectSize, int slotCapacity = 2)
     {
@@ -58,6 +66,16 @@ public class BuildingZoneV2 : MonoBehaviour
     public void SetSize(Vector2 rectSize)
     {
         size = new Vector2(Mathf.Max(0.5f, rectSize.x), Mathf.Max(0.5f, rectSize.y));
+    }
+
+    public void SetCenterOffset(Vector3 offset)
+    {
+        zoneCenterOffset = new Vector3(offset.x, offset.y, 0f);
+    }
+
+    public void SetEntranceOverride(Transform entranceTransform)
+    {
+        entrancePointOverride = entranceTransform;
     }
 
     public Vector3 GetClosestPointOnPerimeter(Vector3 referencePoint)
@@ -105,6 +123,13 @@ public class BuildingZoneV2 : MonoBehaviour
         size = new Vector2(Mathf.Max(0.5f, size.x), Mathf.Max(0.5f, size.y));
         capacity = Mathf.Max(1, capacity);
         occupiedSlots = Mathf.Clamp(occupiedSlots, 0, capacity);
+
+        if (entrancePointOverride == null)
+        {
+            Transform entranceChild = transform.Find("Entrance");
+            if (entranceChild != null)
+                entrancePointOverride = entranceChild;
+        }
 
 #if UNITY_EDITOR
         if (Application.isPlaying || delayedGraphRebuildQueued)

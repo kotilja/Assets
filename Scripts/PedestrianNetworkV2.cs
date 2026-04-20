@@ -108,6 +108,66 @@ public class PedestrianNetworkV2 : MonoBehaviour
         return best;
     }
 
+    public bool TryGetNearestWalkableAttachment(
+        Vector3 position,
+        float maxDistance,
+        bool allowCrosswalkHubs,
+        out Vector3 attachmentPoint)
+    {
+        attachmentPoint = Vector3.zero;
+
+        if (!TryFindNearestWalkableAttachment(
+            position,
+            maxDistance,
+            allowCrosswalkHubs,
+            out Vector3 projectedPoint,
+            out PedestrianNodeDataV2 _,
+            out PedestrianNodeDataV2 _,
+            out float _))
+            return false;
+
+        attachmentPoint = projectedPoint;
+        attachmentPoint.z = 0f;
+        return true;
+    }
+
+    public bool TryGetNearestWalkableAttachment(
+        Vector3 position,
+        float maxDistance,
+        bool allowCrosswalkHubs,
+        out Vector3 attachmentPoint,
+        out Vector3 walkableDirection)
+    {
+        attachmentPoint = Vector3.zero;
+        walkableDirection = Vector3.right;
+
+        if (!TryFindNearestWalkableAttachment(
+            position,
+            maxDistance,
+            allowCrosswalkHubs,
+            out Vector3 projectedPoint,
+            out PedestrianNodeDataV2 edgeStart,
+            out PedestrianNodeDataV2 edgeEnd,
+            out float _))
+            return false;
+
+        attachmentPoint = projectedPoint;
+        attachmentPoint.z = 0f;
+
+        if (edgeStart != null && edgeEnd != null)
+        {
+            walkableDirection = edgeEnd.position - edgeStart.position;
+            walkableDirection.z = 0f;
+        }
+
+        if (walkableDirection.sqrMagnitude < 0.0001f)
+            walkableDirection = Vector3.right;
+        else
+            walkableDirection.Normalize();
+
+        return true;
+    }
+
     public PedestrianNodeDataV2 GetNodeForParkingSpot(ParkingSpotV2 spot)
     {
         if (spot == null)

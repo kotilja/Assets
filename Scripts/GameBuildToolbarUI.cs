@@ -36,6 +36,8 @@ public class GameBuildToolbarUI : MonoBehaviour
     private RectTransform homesGroup;
     private RectTransform roadsGroup;
     private RectTransform settingsGroup;
+    private RectTransform residentialPrefabsGroup;
+    private RectTransform officePrefabsGroup;
     private RectTransform roadSettingsPanel;
     private RectTransform turnsPanel;
     private RectTransform laneConnectionsPanel;
@@ -52,6 +54,7 @@ public class GameBuildToolbarUI : MonoBehaviour
     private Button officesButton;
     private Button drawRoadButton;
     private Button drawCurveButton;
+    private Button pedestrianPathButton;
     private Button parkingButton;
 
     private Button junctionControlButton;
@@ -81,8 +84,12 @@ public class GameBuildToolbarUI : MonoBehaviour
 
     private bool suppressSignalsDurationCallbacks;
     private readonly List<Button> signalPhaseButtons = new List<Button>();
+    private readonly List<Button> residentialPrefabButtons = new List<Button>();
+    private readonly List<Button> officePrefabButtons = new List<Button>();
     private int cachedSignalInstanceId = 0;
     private int cachedSignalPhaseCount = -1;
+    private int cachedResidentialPrefabCount = -1;
+    private int cachedOfficePrefabCount = -1;
 
     private void Awake()
     {
@@ -173,12 +180,15 @@ public class GameBuildToolbarUI : MonoBehaviour
         homesButton = CreateActionButton(constructionGroup, "Дома", subFontSize, secondaryButtonColor, ToggleHomesGroup);
         homesGroup = CreateVerticalGroup("HomesGroup", constructionGroup, 14f);
         housingButton = CreateToolButton(homesGroup, "Жилье", RoadBuildToolV2.ToolMode.PlaceHome);
+        residentialPrefabsGroup = CreateVerticalGroup("ResidentialPrefabsGroup", homesGroup, 14f);
         officesButton = CreateToolButton(homesGroup, "Офисы", RoadBuildToolV2.ToolMode.PlaceOffice);
+        officePrefabsGroup = CreateVerticalGroup("OfficePrefabsGroup", homesGroup, 14f);
 
         roadsButton = CreateActionButton(constructionGroup, "Дороги", subFontSize, secondaryButtonColor, ToggleRoadsGroup);
         roadsGroup = CreateVerticalGroup("RoadsGroup", constructionGroup, 14f);
-        drawRoadButton = CreateToolButton(roadsGroup, "Рисование", RoadBuildToolV2.ToolMode.DrawRoad);
+        drawRoadButton = CreateToolButton(roadsGroup, "Прямая", RoadBuildToolV2.ToolMode.DrawRoad);
         drawCurveButton = CreateToolButton(roadsGroup, "Кривая", RoadBuildToolV2.ToolMode.DrawCurveRoad);
+        pedestrianPathButton = CreateToolButton(roadsGroup, "Пешеходная", RoadBuildToolV2.ToolMode.DrawPedestrianPath);
         parkingButton = CreateToolButton(roadsGroup, "Parking", RoadBuildToolV2.ToolMode.ParkingSpot);
 
         roadSettingsPanel = CreateVerticalGroup("RoadSettingsPanel", rootPanel, 10f);
@@ -214,6 +224,8 @@ public class GameBuildToolbarUI : MonoBehaviour
 
         SetGroupVisible(constructionGroup, true);
         SetGroupVisible(homesGroup, false);
+        SetGroupVisible(residentialPrefabsGroup, false);
+        SetGroupVisible(officePrefabsGroup, false);
         SetGroupVisible(roadsGroup, false);
         SetGroupVisible(settingsGroup, false);
         SetGroupVisible(roadSettingsPanel, false);
@@ -315,6 +327,7 @@ public class GameBuildToolbarUI : MonoBehaviour
         ApplySelection(officesButton, RoadBuildToolV2.ToolMode.PlaceOffice);
         ApplySelection(drawRoadButton, RoadBuildToolV2.ToolMode.DrawRoad);
         ApplySelection(drawCurveButton, RoadBuildToolV2.ToolMode.DrawCurveRoad);
+        ApplySelection(pedestrianPathButton, RoadBuildToolV2.ToolMode.DrawPedestrianPath);
         ApplySelection(parkingButton, RoadBuildToolV2.ToolMode.ParkingSpot);
         ApplySelection(deleteButton, RoadBuildToolV2.ToolMode.DeleteRoad);
         ApplySelection(junctionControlButton, RoadBuildToolV2.ToolMode.JunctionControl);
@@ -324,7 +337,112 @@ public class GameBuildToolbarUI : MonoBehaviour
         ApplySelection(laneConnectionsButton, RoadBuildToolV2.ToolMode.LaneConnections);
 
         RefreshRoadSettingsPanel();
+        RefreshBuildingPrefabPanels();
         RefreshRuntimePanels();
+    }
+
+    private void RefreshBuildingPrefabPanels()
+    {
+        if (buildTool == null)
+            return;
+
+        int residentialCount = buildTool.ResidentialPrefabs != null ? buildTool.ResidentialPrefabs.Count : 0;
+        int officeCount = buildTool.OfficePrefabs != null ? buildTool.OfficePrefabs.Count : 0;
+
+        if (residentialCount != cachedResidentialPrefabCount)
+            RebuildBuildingPrefabButtons(residentialPrefabsGroup, residentialPrefabButtons, buildTool.ResidentialPrefabs, true);
+
+        if (officeCount != cachedOfficePrefabCount)
+            RebuildBuildingPrefabButtons(officePrefabsGroup, officePrefabButtons, buildTool.OfficePrefabs, false);
+
+        cachedResidentialPrefabCount = residentialCount;
+        cachedOfficePrefabCount = officeCount;
+
+        bool showResidential = buildTool.CurrentToolMode == RoadBuildToolV2.ToolMode.PlaceHome;
+        bool showOffice = buildTool.CurrentToolMode == RoadBuildToolV2.ToolMode.PlaceOffice;
+
+        SetGroupVisible(residentialPrefabsGroup, showResidential);
+        SetGroupVisible(officePrefabsGroup, showOffice);
+
+        UpdateBuildingPrefabButtonSelection(
+            residentialPrefabButtons,
+            buildTool.SelectedResidentialPrefabIndex,
+            buildTool.ResidentialPrefabs);
+
+        UpdateBuildingPrefabButtonSelection(
+            officePrefabButtons,
+            buildTool.SelectedOfficePrefabIndex,
+            buildTool.OfficePrefabs);
+    }
+
+    private void RebuildBuildingPrefabButtons(
+        RectTransform parent,
+        List<Button> targetButtons,
+        IReadOnlyList<RoadBuildToolV2.BuildingPrefabEntry> prefabs,
+        bool residential)
+    {
+        targetButtons.Clear();
+
+        if (parent == null)
+            return;
+
+        for (int i = parent.childCount - 1; i >= 0; i--)
+            Destroy(parent.GetChild(i).gameObject);
+
+        if (prefabs == null || prefabs.Count == 0)
+        {
+            CreateInfoLabel(parent, residential ? "Нет prefab в Prefabs/Residential" : "Нет prefab в Prefabs/Office");
+            return;
+        }
+
+        for (int i = 0; i < prefabs.Count; i++)
+        {
+            int index = i;
+            string label = prefabs[i] != null ? prefabs[i].name : $"Prefab {i + 1}";
+            Button button = CreateActionButton(
+                parent,
+                label,
+                subFontSize,
+                secondaryButtonColor,
+                () => HandleSelectBuildingPrefab(residential, index));
+
+            targetButtons.Add(button);
+        }
+    }
+
+    private void UpdateBuildingPrefabButtonSelection(
+        List<Button> buttons,
+        int selectedIndex,
+        IReadOnlyList<RoadBuildToolV2.BuildingPrefabEntry> prefabs)
+    {
+        if (buttons == null)
+            return;
+
+        for (int i = 0; i < buttons.Count; i++)
+        {
+            Button button = buttons[i];
+            if (button == null)
+                continue;
+
+            Image image = button.GetComponent<Image>();
+            if (image != null)
+                image.color = i == selectedIndex ? selectedButtonColor : secondaryButtonColor;
+
+            button.interactable = prefabs != null && i < prefabs.Count;
+        }
+    }
+
+    private void HandleSelectBuildingPrefab(bool residential, int index)
+    {
+        if (buildTool == null)
+            return;
+
+        if (residential)
+            buildTool.SelectResidentialPrefab(index);
+        else
+            buildTool.SelectOfficePrefab(index);
+
+        RefreshSelection();
     }
 
     private void RefreshRoadSettingsPanel()
@@ -921,8 +1039,12 @@ public class GameBuildToolbarUI : MonoBehaviour
             Destroy(signals.gameObject);
 
         signalPhaseButtons.Clear();
+        residentialPrefabButtons.Clear();
+        officePrefabButtons.Clear();
         cachedSignalInstanceId = 0;
         cachedSignalPhaseCount = -1;
+        cachedResidentialPrefabCount = -1;
+        cachedOfficePrefabCount = -1;
     }
 
     private RectTransform FindGroup(string groupName)

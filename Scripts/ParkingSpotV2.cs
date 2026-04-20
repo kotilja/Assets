@@ -15,8 +15,19 @@ public class ParkingSpotV2 : MonoBehaviour
     [SerializeField] private float pedestrianAnchorDistance = 0.35f;
     [SerializeField] private float gizmoLength = 0.7f;
     [SerializeField] private float gizmoWidth = 0.32f;
+    [SerializeField] private Vector2 visualSize = new Vector2(0.88f, 0.5f);
+    [SerializeField] private Color pavementColor = new Color(0.22f, 0.22f, 0.24f, 1f);
+    [SerializeField] private Color occupiedColor = new Color(0.33f, 0.18f, 0.18f, 1f);
+    [SerializeField] private Color markingColor = Color.white;
+    [SerializeField] private int bodySortingOrder = 12;
+    [SerializeField] private int markingSortingOrder = 13;
 
     private bool delayedGraphRebuildQueued = false;
+    private SpriteRenderer bodyRenderer;
+    private SpriteRenderer markingRenderer;
+
+    private static Sprite solidSquareSprite;
+    private static Sprite parkingMarkSprite;
 
     public bool IsOccupied => isOccupied;
     public RoadSegmentV2 ConnectedRoadSegment => connectedRoadSegment;
@@ -62,18 +73,21 @@ public class ParkingSpotV2 : MonoBehaviour
             return false;
 
         isOccupied = true;
+        UpdateVisuals();
         return true;
     }
 
     public void Release()
     {
         isOccupied = false;
+        UpdateVisuals();
     }
 
     public void SetConnectedRoadSegment(RoadSegmentV2 segment)
     {
         connectedRoadSegment = segment;
         SyncPedestrianAnchorSideFromRoad();
+        UpdateVisuals();
     }
 
     public void SetPedestrianAnchorSide(bool onLeftSide)
@@ -86,9 +100,20 @@ public class ParkingSpotV2 : MonoBehaviour
         pedestrianAnchorDistance = Mathf.Max(0.05f, distance);
     }
 
+    private void Awake()
+    {
+        EnsureVisuals();
+    }
+
+    private void OnEnable()
+    {
+        EnsureVisuals();
+    }
+
     private void OnValidate()
     {
         SyncPedestrianAnchorSideFromRoad();
+        EnsureVisuals();
 
 #if UNITY_EDITOR
         if (Application.isPlaying)
@@ -131,6 +156,157 @@ public class ParkingSpotV2 : MonoBehaviour
         Vector3 toParking = position - snappedPoint;
 
         pedestrianAnchorOnLeftSide = Vector3.Cross(tangent.normalized, toParking).z >= 0f;
+    }
+
+    private void EnsureVisuals()
+    {
+        EnsureGeneratedSprites();
+        EnsureRendererReferences();
+        UpdateVisuals();
+    }
+
+    private void EnsureRendererReferences()
+    {
+        bodyRenderer = EnsureVisualRenderer("Body", ref bodyRenderer, solidSquareSprite, bodySortingOrder, SpriteDrawMode.Simple);
+        markingRenderer = EnsureVisualRenderer("Marking", ref markingRenderer, parkingMarkSprite, markingSortingOrder, SpriteDrawMode.Simple);
+    }
+
+    private SpriteRenderer EnsureVisualRenderer(string childName, ref SpriteRenderer renderer, Sprite sprite, int sortingOrder, SpriteDrawMode drawMode)
+    {
+        if (renderer == null)
+        {
+            Transform existing = transform.Find(childName);
+            if (existing != null)
+                renderer = existing.GetComponent<SpriteRenderer>();
+        }
+
+        if (renderer == null)
+        {
+            GameObject child = new GameObject(childName);
+            child.transform.SetParent(transform, false);
+            child.transform.localPosition = Vector3.zero;
+            child.transform.localRotation = Quaternion.identity;
+            child.transform.localScale = Vector3.one;
+            renderer = child.AddComponent<SpriteRenderer>();
+        }
+
+        renderer.sprite = sprite;
+        renderer.drawMode = drawMode;
+        renderer.sortingOrder = sortingOrder;
+        renderer.maskInteraction = SpriteMaskInteraction.None;
+        return renderer;
+    }
+
+    private void UpdateVisuals()
+    {
+        if (bodyRenderer == null || markingRenderer == null)
+            return;
+
+        Vector2 clampedSize = new Vector2(
+            Mathf.Max(0.3f, visualSize.x),
+            Mathf.Max(0.2f, visualSize.y));
+        Vector2 bodySpriteSize = solidSquareSprite != null ? solidSquareSprite.bounds.size : Vector2.one;
+
+        bodyRenderer.color = isOccupied ? occupiedColor : pavementColor;
+        bodyRenderer.transform.localPosition = Vector3.zero;
+        bodyRenderer.transform.localRotation = Quaternion.identity;
+        bodyRenderer.transform.localScale = new Vector3(
+            Mathf.Max(0.01f, clampedSize.x / Mathf.Max(0.01f, bodySpriteSize.x)),
+            Mathf.Max(0.01f, clampedSize.y / Mathf.Max(0.01f, bodySpriteSize.y)),
+            1f);
+
+        markingRenderer.color = markingColor;
+        Vector2 markingSize = new Vector2(clampedSize.y * 0.5f, clampedSize.y * 0.5f);
+        Vector2 markingSpriteSize = parkingMarkSprite != null ? parkingMarkSprite.bounds.size : Vector2.one;
+        markingRenderer.transform.localPosition = new Vector3(0f, 0f, -0.001f);
+        markingRenderer.transform.localRotation = Quaternion.identity;
+        markingRenderer.transform.localScale = new Vector3(
+            Mathf.Max(0.01f, markingSize.x / Mathf.Max(0.01f, markingSpriteSize.x)),
+            Mathf.Max(0.01f, markingSize.y / Mathf.Max(0.01f, markingSpriteSize.y)),
+            1f);
+    }
+
+    private void EnsureGeneratedSprites()
+    {
+        if (solidSquareSprite == null)
+            solidSquareSprite = CreateSolidSquareSprite();
+
+        if (parkingMarkSprite == null)
+            parkingMarkSprite = CreateParkingMarkSprite();
+    }
+
+    private static Sprite CreateSolidSquareSprite()
+    {
+        Texture2D texture = new Texture2D(4, 4, TextureFormat.RGBA32, false);
+        texture.filterMode = FilterMode.Point;
+        texture.wrapMode = TextureWrapMode.Clamp;
+
+        Color32[] pixels = new Color32[16];
+        for (int i = 0; i < pixels.Length; i++)
+            pixels[i] = new Color32(255, 255, 255, 255);
+
+        texture.SetPixels32(pixels);
+        texture.Apply();
+        return Sprite.Create(texture, new Rect(0f, 0f, texture.width, texture.height), new Vector2(0.5f, 0.5f), 16f);
+    }
+
+    private static Sprite CreateParkingMarkSprite()
+    {
+        const int size = 64;
+        Texture2D texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        texture.filterMode = FilterMode.Point;
+        texture.wrapMode = TextureWrapMode.Clamp;
+
+        Color32 clear = new Color32(0, 0, 0, 0);
+        Color32 white = new Color32(255, 255, 255, 255);
+        Color32[] pixels = new Color32[size * size];
+        for (int i = 0; i < pixels.Length; i++)
+            pixels[i] = clear;
+
+        for (int x = 7; x < size - 7; x++)
+        {
+            SetPixel(pixels, size, x, 7, white);
+            SetPixel(pixels, size, x, size - 8, white);
+        }
+
+        for (int y = 7; y < size - 7; y++)
+        {
+            SetPixel(pixels, size, 7, y, white);
+            SetPixel(pixels, size, size - 8, y, white);
+        }
+
+        for (int y = 15; y <= 48; y++)
+        {
+            for (int x = 20; x <= 26; x++)
+                SetPixel(pixels, size, x, y, white);
+        }
+
+        for (int x = 20; x <= 40; x++)
+        {
+            for (int y = 41; y <= 47; y++)
+                SetPixel(pixels, size, x, y, white);
+
+            for (int y = 28; y <= 34; y++)
+                SetPixel(pixels, size, x, y, white);
+        }
+
+        for (int y = 34; y <= 47; y++)
+        {
+            for (int x = 34; x <= 40; x++)
+                SetPixel(pixels, size, x, y, white);
+        }
+
+        texture.SetPixels32(pixels);
+        texture.Apply();
+        return Sprite.Create(texture, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f), size);
+    }
+
+    private static void SetPixel(Color32[] pixels, int width, int x, int y, Color32 color)
+    {
+        if (x < 0 || y < 0 || x >= width || y >= width)
+            return;
+
+        pixels[y * width + x] = color;
     }
 
     private Vector3 ProjectPointOntoPolyline(Vector3 point, List<Vector3> polyline)

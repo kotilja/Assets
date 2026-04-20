@@ -21,6 +21,25 @@ public class PedestrianPathV2 : MonoBehaviour
     public Transform StartPoint => startPoint;
     public Transform EndPoint => endPoint;
 
+    public void Initialize(Vector3 startPosition, Vector3 endPosition)
+    {
+        EnsureAnchorPoints();
+
+        if (startPoint != null)
+        {
+            startPoint.position = new Vector3(startPosition.x, startPosition.y, 0f);
+            startPoint.localRotation = Quaternion.identity;
+        }
+
+        if (endPoint != null)
+        {
+            endPoint.position = new Vector3(endPosition.x, endPosition.y, 0f);
+            endPoint.localRotation = Quaternion.identity;
+        }
+
+        RefreshVisual();
+    }
+
     public List<Vector3> GetPolylineWorld()
     {
         List<Vector3> points = new List<Vector3>();
@@ -96,6 +115,8 @@ public class PedestrianPathV2 : MonoBehaviour
 
     private void EnsureRenderer()
     {
+        EnsureAnchorPoints();
+
         if (lineRenderer == null)
             lineRenderer = GetComponent<LineRenderer>();
 
@@ -115,5 +136,28 @@ public class PedestrianPathV2 : MonoBehaviour
         lineRenderer.numCornerVertices = 2;
         lineRenderer.textureMode = LineTextureMode.Stretch;
         lineRenderer.alignment = LineAlignment.TransformZ;
+    }
+
+    private void EnsureAnchorPoints()
+    {
+        if (startPoint == null)
+            startPoint = FindOrCreateAnchor("StartPoint");
+
+        if (endPoint == null)
+            endPoint = FindOrCreateAnchor("EndPoint");
+    }
+
+    private Transform FindOrCreateAnchor(string anchorName)
+    {
+        Transform anchor = transform.Find(anchorName);
+        if (anchor != null)
+            return anchor;
+
+        GameObject anchorObject = new GameObject(anchorName);
+        anchorObject.transform.SetParent(transform, false);
+        anchorObject.transform.localPosition = Vector3.zero;
+        anchorObject.transform.localRotation = Quaternion.identity;
+        anchorObject.transform.localScale = Vector3.one;
+        return anchorObject.transform;
     }
 }

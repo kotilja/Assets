@@ -3,6 +3,11 @@ using UnityEngine;
 [DisallowMultipleComponent]
 public class GameCameraController2D : MonoBehaviour
 {
+    [Header("World bounds")]
+    [SerializeField] private float worldSquareSize = 10000f;
+    [SerializeField] private Vector3 homeWorldPosition = new Vector3(0f, 0f, -10f);
+    [SerializeField] private KeyCode returnHomeKey = KeyCode.Home;
+
     [Header("Move")]
     [SerializeField] private float moveSpeed = 12f;
     [SerializeField] private float fastMoveMultiplier = 2f;
@@ -31,6 +36,8 @@ public class GameCameraController2D : MonoBehaviour
 
         if (targetCamera != null)
             targetOrthographicSize = targetCamera.orthographicSize;
+
+        ClampCameraPosition();
     }
 
     private void Update()
@@ -41,7 +48,9 @@ public class GameCameraController2D : MonoBehaviour
         HandleKeyboardMove();
         HandleMousePan();
         HandleMouseZoom();
+        HandleReturnHomeInput();
         UpdateZoomSmoothing();
+        ClampCameraPosition();
     }
 
     private void HandleKeyboardMove()
@@ -139,6 +148,16 @@ public class GameCameraController2D : MonoBehaviour
         targetCamera.transform.position = targetCameraPosition;
     }
 
+    private void HandleReturnHomeInput()
+    {
+        if (returnHomeKey == KeyCode.None || !Input.GetKeyDown(returnHomeKey))
+            return;
+
+        Vector3 targetPosition = homeWorldPosition;
+        targetPosition.z = targetCamera.transform.position.z;
+        targetCamera.transform.position = GetClampedCameraPosition(targetPosition);
+    }
+
     private void UpdateZoomSmoothing()
     {
         if (targetCamera == null)
@@ -150,6 +169,36 @@ public class GameCameraController2D : MonoBehaviour
             targetOrthographicSize,
             1f - Mathf.Exp(-smooth * Time.unscaledDeltaTime)
         );
+    }
+
+    private void ClampCameraPosition()
+    {
+        if (targetCamera == null)
+            return;
+
+        targetCamera.transform.position = GetClampedCameraPosition(targetCamera.transform.position);
+    }
+
+    private Vector3 GetClampedCameraPosition(Vector3 position)
+    {
+        float halfWorldSize = Mathf.Max(1f, worldSquareSize * 0.5f);
+        float verticalExtent = targetCamera != null && targetCamera.orthographic ? targetCamera.orthographicSize : 0f;
+        float horizontalExtent = targetCamera != null && targetCamera.orthographic ? verticalExtent * targetCamera.aspect : 0f;
+
+        float minX = -halfWorldSize + horizontalExtent;
+        float maxX = halfWorldSize - horizontalExtent;
+        float minY = -halfWorldSize + verticalExtent;
+        float maxY = halfWorldSize - verticalExtent;
+
+        if (minX > maxX)
+            minX = maxX = 0f;
+
+        if (minY > maxY)
+            minY = maxY = 0f;
+
+        position.x = Mathf.Clamp(position.x, minX, maxX);
+        position.y = Mathf.Clamp(position.y, minY, maxY);
+        return position;
     }
 
     private bool TryGetMouseWorldPoint(out Vector3 worldPoint)

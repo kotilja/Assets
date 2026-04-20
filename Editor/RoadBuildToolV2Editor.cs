@@ -28,6 +28,10 @@ public class RoadBuildToolV2Editor : Editor
         if (Tool.CurrentToolMode == RoadBuildToolV2.ToolMode.ParkingSpot)
             DrawParkingEditorPanel();
 
+        if (Tool.CurrentToolMode == RoadBuildToolV2.ToolMode.PlaceHome ||
+            Tool.CurrentToolMode == RoadBuildToolV2.ToolMode.PlaceOffice)
+            DrawBuildingPrefabPanel();
+
         if (GUILayout.Button("Сбросить текущую цепочку"))
         {
             Tool.ClearCurrentChain();
@@ -54,8 +58,12 @@ public class RoadBuildToolV2Editor : Editor
     {
         EditorGUILayout.LabelField("Быстрое переключение режима", EditorStyles.boldLabel);
         DrawModeButtonRow(
-            ("Рисование", RoadBuildToolV2.ToolMode.DrawRoad),
+            ("Прямая", RoadBuildToolV2.ToolMode.DrawRoad),
             ("Кривая", RoadBuildToolV2.ToolMode.DrawCurveRoad),
+            ("Пешеходная", RoadBuildToolV2.ToolMode.DrawPedestrianPath)
+        );
+
+        DrawModeButtonRow(
             ("Home", RoadBuildToolV2.ToolMode.PlaceHome)
         );
 
@@ -284,6 +292,56 @@ public class RoadBuildToolV2Editor : Editor
         }
     }
 
+    private void DrawBuildingPrefabPanel()
+    {
+        EditorGUILayout.Space(8f);
+        EditorGUILayout.LabelField("Building prefabs", EditorStyles.boldLabel);
+
+        if (GUILayout.Button("Refresh prefab catalog"))
+        {
+            Tool.RefreshBuildingPrefabCatalog();
+            EditorUtility.SetDirty(Tool);
+        }
+
+        if (Tool.CurrentToolMode == RoadBuildToolV2.ToolMode.PlaceHome)
+        {
+            DrawBuildingPrefabSelection(
+                Tool.ResidentialPrefabs,
+                Tool.SelectedResidentialPrefabIndex,
+                Tool.SelectResidentialPrefab);
+        }
+        else if (Tool.CurrentToolMode == RoadBuildToolV2.ToolMode.PlaceOffice)
+        {
+            DrawBuildingPrefabSelection(
+                Tool.OfficePrefabs,
+                Tool.SelectedOfficePrefabIndex,
+                Tool.SelectOfficePrefab);
+        }
+    }
+
+    private void DrawBuildingPrefabSelection(
+        System.Collections.Generic.IReadOnlyList<RoadBuildToolV2.BuildingPrefabEntry> prefabs,
+        int selectedIndex,
+        System.Action<int> onSelect)
+    {
+        if (prefabs == null || prefabs.Count == 0)
+        {
+            EditorGUILayout.HelpBox("No prefabs found in the configured folder.", MessageType.Warning);
+            return;
+        }
+
+        string[] names = new string[prefabs.Count];
+        for (int i = 0; i < prefabs.Count; i++)
+            names[i] = prefabs[i] != null ? prefabs[i].name : $"Prefab {i + 1}";
+
+        int newIndex = EditorGUILayout.Popup("Selected prefab", selectedIndex, names);
+        if (newIndex != selectedIndex)
+        {
+            onSelect?.Invoke(newIndex);
+            EditorUtility.SetDirty(Tool);
+        }
+    }
+
     private void DrawMovementToggleButton(string label, RoadLaneConnectionV2.MovementType movementType)
     {
         bool allowed = Tool.GetSelectedApproachMovementAllowed(movementType);
@@ -327,11 +385,14 @@ public class RoadBuildToolV2Editor : Editor
             case RoadBuildToolV2.ToolMode.DrawCurveRoad:
                 return "Режим кривой: ЛКМ точка A — старт, ЛКМ точка B — точка изгиба, затем конец дороги идет за курсором. Третий ЛКМ фиксирует конец C. При continueChain следующая кривая продолжается симметрично.";
 
+            case RoadBuildToolV2.ToolMode.DrawPedestrianPath:
+                return "Pedestrian path mode: first click starts a walkway, second click finishes it. Endpoints snap to sidewalks and pedestrian graph points.";
+
             case RoadBuildToolV2.ToolMode.PlaceHome:
-                return "Home mode: first click sets the first corner, second click creates a residential rectangle.";
+                return "Home mode: single click places the selected residential prefab.";
 
             case RoadBuildToolV2.ToolMode.PlaceOffice:
-                return "Office mode: first click sets the first corner, second click creates an office rectangle.";
+                return "Office mode: single click places the selected office prefab.";
 
             case RoadBuildToolV2.ToolMode.ParkingSpot:
                 return "Parking mode: click a road segment to create a parking spot on the nearest side.";
@@ -376,7 +437,7 @@ public class RoadBuildToolV2Editor : Editor
             Tool.CurrentToolMode == RoadBuildToolV2.ToolMode.ParkingSpot ||
             Tool.CurrentToolMode == RoadBuildToolV2.ToolMode.PlaceHome ||
             Tool.CurrentToolMode == RoadBuildToolV2.ToolMode.PlaceOffice
-            ? rawWorldPosition
+            ? worldPosition
             : worldPosition;
 
         DrawPreview(worldPosition);
@@ -447,12 +508,28 @@ public class RoadBuildToolV2Editor : Editor
                 }
                 break;
 
+            case RoadBuildToolV2.ToolMode.DrawPedestrianPath:
+                Handles.color = Tool.IsPedestrianPathPreviewValid(worldPosition)
+                    ? Tool.PedestrianPathPreviewColor
+                    : Tool.InvalidPreviewColor;
+                Handles.DrawSolidDisc(worldPosition, Vector3.forward, 0.06f);
+
+                if (Tool.HasPedestrianPathStart)
+                    Handles.DrawDottedLine(Tool.CurrentPedestrianPathStart, worldPosition, 4f);
+                break;
+
             case RoadBuildToolV2.ToolMode.PlaceHome:
-                DrawBuildingPreview(worldPosition, Tool.CurrentBuildingStartPoint, Tool.HasBuildingStartPoint, Tool.HomePreviewColor);
+                DrawBuildingPreview(
+                    worldPosition + Tool.GetSelectedBuildingPrefabCenterOffset(BuildingZoneV2.BuildingType.Home),
+                    Tool.GetSelectedBuildingPrefabSize(BuildingZoneV2.BuildingType.Home),
+                    Tool.HomePreviewColor);
                 break;
 
             case RoadBuildToolV2.ToolMode.PlaceOffice:
-                DrawBuildingPreview(worldPosition, Tool.CurrentBuildingStartPoint, Tool.HasBuildingStartPoint, Tool.OfficePreviewColor);
+                DrawBuildingPreview(
+                    worldPosition + Tool.GetSelectedBuildingPrefabCenterOffset(BuildingZoneV2.BuildingType.Office),
+                    Tool.GetSelectedBuildingPrefabSize(BuildingZoneV2.BuildingType.Office),
+                    Tool.OfficePreviewColor);
                 break;
 
             case RoadBuildToolV2.ToolMode.ParkingSpot:
@@ -506,18 +583,15 @@ public class RoadBuildToolV2Editor : Editor
         }
     }
 
-    private void DrawBuildingPreview(Vector3 worldPosition, Vector3 startPoint, bool hasStartPoint, Color color)
+    private void DrawBuildingPreview(Vector3 worldPosition, Vector2 size, Color color)
     {
         Handles.color = color;
         Handles.DrawSolidDisc(worldPosition, Vector3.forward, 0.06f);
-
-        if (!hasStartPoint)
-            return;
-
-        Vector3 p0 = new Vector3(startPoint.x, startPoint.y, 0f);
-        Vector3 p1 = new Vector3(worldPosition.x, startPoint.y, 0f);
-        Vector3 p2 = new Vector3(worldPosition.x, worldPosition.y, 0f);
-        Vector3 p3 = new Vector3(startPoint.x, worldPosition.y, 0f);
+        Vector3 half = new Vector3(size.x, size.y, 0f) * 0.5f;
+        Vector3 p0 = worldPosition + new Vector3(-half.x, -half.y, 0f);
+        Vector3 p1 = worldPosition + new Vector3(half.x, -half.y, 0f);
+        Vector3 p2 = worldPosition + new Vector3(half.x, half.y, 0f);
+        Vector3 p3 = worldPosition + new Vector3(-half.x, half.y, 0f);
 
         Handles.DrawSolidRectangleWithOutline(
             new Vector3[] { p0, p1, p2, p3 },

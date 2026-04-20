@@ -8,11 +8,19 @@ using UnityEditor.SceneManagement;
 
 public class RoadBuildToolV2 : MonoBehaviour
 {
+    [System.Serializable]
+    public class BuildingPrefabEntry
+    {
+        public string name;
+        public GameObject prefab;
+    }
+
     public enum ToolMode
     {
         None,
         DrawRoad,
         DrawCurveRoad,
+        DrawPedestrianPath,
         PlaceHome,
         PlaceOffice,
         ParkingSpot,
@@ -25,6 +33,7 @@ public class RoadBuildToolV2 : MonoBehaviour
     }
 
     [SerializeField] private RoadNetworkV2 network;
+    [SerializeField] private PedestrianNetworkV2 pedestrianNetwork;
     [SerializeField] private bool toolEnabled = true;
     [SerializeField] private bool continueChain = true;
 
@@ -44,6 +53,8 @@ public class RoadBuildToolV2 : MonoBehaviour
     [SerializeField] private float segmentSnapDistance = 0.35f;
     [SerializeField] private float minDistanceFromCurrentStartForSegmentSnap = 0.12f;
     [SerializeField] private float minChainTurnAngle = 90f;
+    [SerializeField] private bool snapToGrid = true;
+    [SerializeField] private float gridSize = 0.5f;
 
     [Header("Delete tool")]
     [SerializeField] private float deletePickDistance = 0.25f;
@@ -64,11 +75,25 @@ public class RoadBuildToolV2 : MonoBehaviour
     [SerializeField] private float parkingSidewalkOffset = 0.8f;
     [SerializeField] private Color parkingPreviewColor = new Color(1f, 0.75f, 0.2f, 1f);
 
+    [Header("Pedestrian path tool")]
+    [SerializeField] private float pedestrianPathSnapDistance = 0.45f;
+    [SerializeField] private float pedestrianPathDeletePickDistance = 0.3f;
+    [SerializeField] private float minPedestrianPathLength = 0.35f;
+    [SerializeField] private Color pedestrianPathPreviewColor = new Color(1f, 0.65f, 0.2f, 1f);
+
     [Header("Building tool")]
-    [SerializeField] private float minBuildingSize = 0.8f;
     [SerializeField] private float buildingDeletePickDistance = 0.6f;
+    [SerializeField] private float buildingSidewalkSnapDistance = 1.5f;
+    [SerializeField] private float buildingWalkableEdgeOffset = 0.16f;
     [SerializeField] private Color homePreviewColor = new Color(0.35f, 0.8f, 0.45f, 1f);
     [SerializeField] private Color officePreviewColor = new Color(0.35f, 0.55f, 0.95f, 1f);
+    [SerializeField] private string residentialPrefabsFolder = "Assets/Prefabs/Residential";
+    [SerializeField] private string officePrefabsFolder = "Assets/Prefabs/Office";
+    [SerializeField] private List<BuildingPrefabEntry> residentialPrefabs = new List<BuildingPrefabEntry>();
+    [SerializeField] private List<BuildingPrefabEntry> officePrefabs = new List<BuildingPrefabEntry>();
+    [SerializeField] private int selectedResidentialPrefabIndex = 0;
+    [SerializeField] private int selectedOfficePrefabIndex = 0;
+    [SerializeField] private float currentBuildingRotationDegrees = 0f;
 
     [Header("Scene preview")]
     [SerializeField] private Color previewColor = Color.cyan;
@@ -81,8 +106,8 @@ public class RoadBuildToolV2 : MonoBehaviour
     [SerializeField] private RoadNodeV2 currentChainPreviousNode;
     [SerializeField] private bool hasCurveControlPoint = false;
     [SerializeField] private Vector3 currentCurveControlPoint = Vector3.zero;
-    [SerializeField] private bool hasBuildingStartPoint = false;
-    [SerializeField] private Vector3 currentBuildingStartPoint = Vector3.zero;
+    [SerializeField] private bool hasPedestrianPathStart = false;
+    [SerializeField] private Vector3 currentPedestrianPathStart = Vector3.zero;
     [SerializeField] private RoadNodeV2 selectedTurnNode;
     [SerializeField] private RoadSegmentV2 selectedIncomingSegment;
     [SerializeField] private RoadSegmentV2 selectedParkingSegment;
@@ -106,24 +131,28 @@ public class RoadBuildToolV2 : MonoBehaviour
     public Vector3 CurrentStartPosition => currentStartNode != null ? currentStartNode.transform.position : Vector3.zero;
     public bool HasCurveControlPoint => hasCurveControlPoint;
     public Vector3 CurrentCurveControlPoint => currentCurveControlPoint;
-    public bool HasBuildingStartPoint => hasBuildingStartPoint;
-    public Vector3 CurrentBuildingStartPoint => currentBuildingStartPoint;
+    public bool HasPedestrianPathStart => hasPedestrianPathStart;
+    public Vector3 CurrentPedestrianPathStart => currentPedestrianPathStart;
     public int ForwardLanes => forwardLanes;
     public int BackwardLanes => backwardLanes;
     public float SpeedLimit => speedLimit;
 
     public float SnapDistance => snapDistance;
     public float MinRoadSegmentLength => minRoadSegmentLength;
+    public float MinPedestrianPathLength => minPedestrianPathLength;
     public float DeletePickDistance => deletePickDistance;
     public float JunctionPickDistance => junctionPickDistance;
     public float ApproachPickDistance => approachPickDistance;
     public float SegmentSnapDistance => segmentSnapDistance;
     public float SignalEditorPickRadius => signalEditorPickRadius;
     public float MinChainTurnAngle => minChainTurnAngle;
+    public bool SnapToGrid => snapToGrid;
+    public float GridSize => Mathf.Max(0.05f, gridSize);
 
     public Color PreviewColor => previewColor;
     public Color InvalidPreviewColor => invalidPreviewColor;
     public Color ParkingPreviewColor => parkingPreviewColor;
+    public Color PedestrianPathPreviewColor => pedestrianPathPreviewColor;
     public Color HomePreviewColor => homePreviewColor;
     public Color OfficePreviewColor => officePreviewColor;
     public Color DeletePreviewColor => deletePreviewColor;
@@ -154,6 +183,26 @@ public class RoadBuildToolV2 : MonoBehaviour
         network != null ? network.FindLaneById(selectedToLaneId) : null;
 
     public RoadNodeV2 SelectedLaneConnectionNode => selectedLaneConnectionNode;
+    public string ResidentialPrefabsFolder => residentialPrefabsFolder;
+    public string OfficePrefabsFolder => officePrefabsFolder;
+
+    public IReadOnlyList<BuildingPrefabEntry> ResidentialPrefabs => residentialPrefabs;
+    public IReadOnlyList<BuildingPrefabEntry> OfficePrefabs => officePrefabs;
+    public int SelectedResidentialPrefabIndex => selectedResidentialPrefabIndex;
+    public int SelectedOfficePrefabIndex => selectedOfficePrefabIndex;
+    public GameObject SelectedResidentialPrefab => GetSelectedBuildingPrefab(BuildingZoneV2.BuildingType.Home);
+    public GameObject SelectedOfficePrefab => GetSelectedBuildingPrefab(BuildingZoneV2.BuildingType.Office);
+    public float CurrentBuildingRotationDegrees => currentBuildingRotationDegrees;
+
+    private void Awake()
+    {
+        RefreshBuildingPrefabCatalog();
+    }
+
+    private void OnValidate()
+    {
+        RefreshBuildingPrefabCatalog();
+    }
 
     public void SetToolMode(ToolMode mode)
     {
@@ -162,8 +211,8 @@ public class RoadBuildToolV2 : MonoBehaviour
         currentChainPreviousNode = null;
         hasCurveControlPoint = false;
         currentCurveControlPoint = Vector3.zero;
-        hasBuildingStartPoint = false;
-        currentBuildingStartPoint = Vector3.zero;
+        hasPedestrianPathStart = false;
+        currentPedestrianPathStart = Vector3.zero;
 
         if (toolMode != ToolMode.JunctionTurns)
         {
@@ -226,18 +275,57 @@ public class RoadBuildToolV2 : MonoBehaviour
         SetSpeedLimit(speedLimit + delta);
     }
 
+    public void SetSnapToGrid(bool value)
+    {
+        snapToGrid = value;
+    }
+
+    public void SetGridSize(float value)
+    {
+        gridSize = Mathf.Max(0.05f, value);
+    }
+
+    public void AdjustCurrentBuildingRotation(float deltaDegrees)
+    {
+        currentBuildingRotationDegrees = Mathf.Repeat(currentBuildingRotationDegrees + deltaDegrees, 360f);
+    }
+
+    public void ResetCurrentBuildingRotation()
+    {
+        currentBuildingRotationDegrees = 0f;
+    }
+
     public Vector3 GetPreviewWorldPosition(Vector3 rawWorldPosition)
     {
         rawWorldPosition.z = 0f;
+        Vector3 gridSnappedWorldPosition = GetGridSnappedPosition(rawWorldPosition);
+
+        if (toolMode == ToolMode.PlaceHome || toolMode == ToolMode.PlaceOffice)
+            return gridSnappedWorldPosition;
+
+        if (toolMode == ToolMode.DrawPedestrianPath)
+            return GetPedestrianPathSnappedPosition(rawWorldPosition, gridSnappedWorldPosition);
 
         if (toolMode != ToolMode.DrawRoad && toolMode != ToolMode.DrawCurveRoad && toolMode != ToolMode.ParkingSpot)
             return rawWorldPosition;
 
         if (!snapToExistingSegments || network == null)
-            return rawWorldPosition;
+            return toolMode == ToolMode.ParkingSpot ? rawWorldPosition : gridSnappedWorldPosition;
 
         if (toolMode == ToolMode.DrawRoad)
         {
+            if (network.GetNearestNode(rawWorldPosition, segmentSnapDistance) is RoadNodeV2 snappedNode)
+            {
+                Vector3 snappedNodePosition = snappedNode.transform.position;
+
+                if (currentStartNode == null)
+                    return snappedNodePosition;
+
+                float nodeDistanceFromStart = Vector3.Distance(snappedNodePosition, currentStartNode.transform.position);
+                if (nodeDistanceFromStart >= minDistanceFromCurrentStartForSegmentSnap)
+                    return snappedNodePosition;
+            }
+
             if (network.TryGetNearestPointOnSegment(
                 rawWorldPosition,
                 segmentSnapDistance,
@@ -256,7 +344,7 @@ public class RoadBuildToolV2 : MonoBehaviour
                 }
             }
 
-            return rawWorldPosition;
+            return gridSnappedWorldPosition;
         }
 
         if (toolMode == ToolMode.ParkingSpot)
@@ -280,6 +368,9 @@ public class RoadBuildToolV2 : MonoBehaviour
         // 3-й клик — конец дороги (снапаем)
         if (currentStartNode == null)
         {
+            if (network.GetNearestNode(rawWorldPosition, segmentSnapDistance) is RoadNodeV2 curveStartNode)
+                return curveStartNode.transform.position;
+
             if (network.TryGetNearestPointOnSegment(
                 rawWorldPosition,
                 segmentSnapDistance,
@@ -290,11 +381,20 @@ public class RoadBuildToolV2 : MonoBehaviour
                     return curveStartSnappedPoint;
             }
 
-            return rawWorldPosition;
+            return gridSnappedWorldPosition;
         }
 
         if (!hasCurveControlPoint)
-            return rawWorldPosition;
+            return gridSnappedWorldPosition;
+
+        if (network.GetNearestNode(rawWorldPosition, segmentSnapDistance) is RoadNodeV2 curveEndNode)
+        {
+            Vector3 curveEndNodePosition = curveEndNode.transform.position;
+            float nodeDistanceFromStart = Vector3.Distance(curveEndNodePosition, currentStartNode.transform.position);
+
+            if (nodeDistanceFromStart >= minDistanceFromCurrentStartForSegmentSnap)
+                return curveEndNodePosition;
+        }
 
         if (network.TryGetNearestPointOnSegment(
             rawWorldPosition,
@@ -311,7 +411,20 @@ public class RoadBuildToolV2 : MonoBehaviour
             }
         }
 
-        return rawWorldPosition;
+        return gridSnappedWorldPosition;
+    }
+
+    public Vector3 GetGridSnappedPosition(Vector3 worldPosition)
+    {
+        worldPosition.z = 0f;
+
+        if (!snapToGrid)
+            return worldPosition;
+
+        float step = Mathf.Max(0.05f, gridSize);
+        worldPosition.x = Mathf.Round(worldPosition.x / step) * step;
+        worldPosition.y = Mathf.Round(worldPosition.y / step) * step;
+        return worldPosition;
     }
 
     public void HandleSceneClick(Vector3 worldPosition)
@@ -332,6 +445,10 @@ public class RoadBuildToolV2 : MonoBehaviour
 
             case ToolMode.DrawCurveRoad:
                 HandleDrawCurveClick(GetPreviewWorldPosition(worldPosition));
+                break;
+
+            case ToolMode.DrawPedestrianPath:
+                HandleDrawPedestrianPathClick(GetPreviewWorldPosition(worldPosition));
                 break;
 
             case ToolMode.PlaceHome:
@@ -412,6 +529,7 @@ public class RoadBuildToolV2 : MonoBehaviour
         }
 
         network.RefreshAll();
+        RebuildPedestrianGraphIfPresent();
     }
 
     private void HandleDrawCurveClick(Vector3 worldPosition)
@@ -478,6 +596,32 @@ public class RoadBuildToolV2 : MonoBehaviour
         }
 
         network.RefreshAll();
+        RebuildPedestrianGraphIfPresent();
+    }
+
+    private void HandleDrawPedestrianPathClick(Vector3 worldPosition)
+    {
+        worldPosition.z = 0f;
+
+        if (!hasPedestrianPathStart)
+        {
+            hasPedestrianPathStart = true;
+            currentPedestrianPathStart = worldPosition;
+            return;
+        }
+
+        if (!IsPedestrianPathPreviewValid(worldPosition))
+            return;
+
+        CreatePedestrianPath(currentPedestrianPathStart, worldPosition);
+
+        if (continueChain)
+            currentPedestrianPathStart = worldPosition;
+        else
+        {
+            hasPedestrianPathStart = false;
+            currentPedestrianPathStart = Vector3.zero;
+        }
     }
 
     private Vector3 GetMirroredCurveControlPoint(Vector3 pivot, Vector3 previousControlPoint)
@@ -574,6 +718,8 @@ public class RoadBuildToolV2 : MonoBehaviour
             return;
 
         currentStartNode = null;
+        hasPedestrianPathStart = false;
+        currentPedestrianPathStart = Vector3.zero;
 
         if (DeleteNearestParkingSpotAtPoint(worldPosition, deletePickDistance))
             return;
@@ -581,7 +727,11 @@ public class RoadBuildToolV2 : MonoBehaviour
         if (DeleteNearestBuildingAtPoint(worldPosition, Mathf.Max(deletePickDistance, buildingDeletePickDistance)))
             return;
 
+        if (DeleteNearestPedestrianPathAtPoint(worldPosition, Mathf.Max(deletePickDistance, pedestrianPathDeletePickDistance)))
+            return;
+
         network.DeleteNearestSegmentAtPoint(worldPosition, deletePickDistance);
+        RebuildPedestrianGraphIfPresent();
     }
 
     private void HandleBuildingClick(Vector3 worldPosition, BuildingZoneV2.BuildingType buildingType)
@@ -589,30 +739,9 @@ public class RoadBuildToolV2 : MonoBehaviour
         currentStartNode = null;
         hasCurveControlPoint = false;
         currentCurveControlPoint = Vector3.zero;
-
-        if (!hasBuildingStartPoint)
-        {
-            hasBuildingStartPoint = true;
-            currentBuildingStartPoint = worldPosition;
-            return;
-        }
-
-        Vector3 endPoint = worldPosition;
-        Vector2 size = new Vector2(
-            Mathf.Max(minBuildingSize, Mathf.Abs(endPoint.x - currentBuildingStartPoint.x)),
-            Mathf.Max(minBuildingSize, Mathf.Abs(endPoint.y - currentBuildingStartPoint.y))
-        );
-
-        Vector3 center = new Vector3(
-            (currentBuildingStartPoint.x + endPoint.x) * 0.5f,
-            (currentBuildingStartPoint.y + endPoint.y) * 0.5f,
-            0f
-        );
-
-        CreateBuildingZone(center, size, buildingType);
-
-        hasBuildingStartPoint = false;
-        currentBuildingStartPoint = Vector3.zero;
+        hasPedestrianPathStart = false;
+        currentPedestrianPathStart = Vector3.zero;
+        CreateBuildingFromSelectedPrefab(worldPosition, buildingType);
     }
 
     public void HandleParkingSpotClick(Vector3 worldPosition)
@@ -640,7 +769,10 @@ public class RoadBuildToolV2 : MonoBehaviour
             out bool onLeftSide
         );
 
-        ParkingSpotV2 spot = CreateParkingSpot(parkingPosition, snappedSegment);
+        Vector3 slotPosition = parkingPosition;
+        slotPosition.z = 0f;
+
+        ParkingSpotV2 spot = CreateParkingSpot(slotPosition, snappedSegment);
         if (spot != null)
             spot.SetPedestrianAnchorSide(onLeftSide);
 
@@ -652,6 +784,8 @@ public class RoadBuildToolV2 : MonoBehaviour
             return;
 
         network.RefreshAll();
+
+        RebuildPedestrianGraphIfPresent();
     }
 
     private bool DeleteNearestParkingSpotAtPoint(Vector3 worldPosition, float pickDistance)
@@ -688,9 +822,7 @@ public class RoadBuildToolV2 : MonoBehaviour
 
         network.RefreshAll();
 
-        PedestrianNetworkV2 pedestrianNetwork = FindFirstObjectByType<PedestrianNetworkV2>();
-        if (pedestrianNetwork != null)
-            pedestrianNetwork.RebuildGraph();
+        RebuildPedestrianGraphIfPresent();
 
 #if UNITY_EDITOR
         if (!Application.isPlaying)
@@ -701,6 +833,19 @@ public class RoadBuildToolV2 : MonoBehaviour
 #endif
 
         return true;
+    }
+
+    public bool IsPedestrianPathPreviewValid(Vector3 previewWorldPosition)
+    {
+        previewWorldPosition.z = 0f;
+
+        if (!hasPedestrianPathStart)
+            return true;
+
+        if (Vector3.Distance(currentPedestrianPathStart, previewWorldPosition) < Mathf.Max(0.05f, minPedestrianPathLength))
+            return false;
+
+        return !DoesPedestrianPathIntersectBuildings(currentPedestrianPathStart, previewWorldPosition);
     }
 
     private bool DeleteNearestBuildingAtPoint(Vector3 worldPosition, float pickDistance)
@@ -735,9 +880,52 @@ public class RoadBuildToolV2 : MonoBehaviour
         Destroy(bestBuilding.gameObject);
 #endif
 
-        PedestrianNetworkV2 pedestrianNetwork = FindFirstObjectByType<PedestrianNetworkV2>();
-        if (pedestrianNetwork != null)
-            pedestrianNetwork.RebuildGraph();
+        RebuildPedestrianGraphIfPresent();
+
+#if UNITY_EDITOR
+        if (!Application.isPlaying)
+            EditorSceneManager.MarkSceneDirty(gameObject.scene);
+#endif
+
+        return true;
+    }
+
+    private bool DeleteNearestPedestrianPathAtPoint(Vector3 worldPosition, float pickDistance)
+    {
+        PedestrianPathV2[] paths = FindObjectsByType<PedestrianPathV2>(FindObjectsSortMode.None);
+        if (paths == null || paths.Length == 0)
+            return false;
+
+        PedestrianPathV2 bestPath = null;
+        float bestDistance = Mathf.Max(0f, pickDistance);
+
+        for (int i = 0; i < paths.Length; i++)
+        {
+            PedestrianPathV2 path = paths[i];
+            if (path == null)
+                continue;
+
+            List<Vector3> polyline = path.GetPolylineWorld();
+            float distance = DistancePointToPolyline(worldPosition, polyline);
+            if (distance > bestDistance)
+                continue;
+
+            bestDistance = distance;
+            bestPath = path;
+        }
+
+        if (bestPath == null)
+            return false;
+
+#if UNITY_EDITOR
+        Undo.DestroyObjectImmediate(bestPath.gameObject);
+#else
+        Destroy(bestPath.gameObject);
+#endif
+
+        PedestrianNetworkV2 pedestrianGraph = GetPedestrianNetwork();
+        if (pedestrianGraph != null)
+            pedestrianGraph.RebuildGraph();
 
 #if UNITY_EDITOR
         if (!Application.isPlaying)
@@ -1424,6 +1612,8 @@ private RoadLaneDataV2 FindNearestOutgoingLane(RoadNodeV2 node, Vector3 worldPos
         currentChainPreviousNode = null;
         hasCurveControlPoint = false;
         currentCurveControlPoint = Vector3.zero;
+        hasPedestrianPathStart = false;
+        currentPedestrianPathStart = Vector3.zero;
     }
 
     public void ClearTurnSelection()
@@ -1437,9 +1627,7 @@ private RoadLaneDataV2 FindNearestOutgoingLane(RoadNodeV2 node, Vector3 worldPos
         if (network != null)
             network.RefreshAll();
 
-        PedestrianNetworkV2 pedestrianNetwork = FindFirstObjectByType<PedestrianNetworkV2>();
-        if (pedestrianNetwork != null)
-            pedestrianNetwork.RebuildGraph();
+        RebuildPedestrianGraphIfPresent();
     }
 
     private RoadSegmentV2 FindNearestIncomingSegment(RoadNodeV2 node, Vector3 worldPosition, float maxDistance)
@@ -1551,41 +1739,767 @@ private RoadLaneDataV2 FindNearestOutgoingLane(RoadNodeV2 node, Vector3 worldPos
         return spot;
     }
 
-    private BuildingZoneV2 CreateBuildingZone(Vector3 center, Vector2 size, BuildingZoneV2.BuildingType buildingType)
+    private Vector3 GetPedestrianPathSnappedPosition(Vector3 rawWorldPosition, Vector3 gridSnappedWorldPosition)
     {
-        GameObject buildingObject = new GameObject(buildingType == BuildingZoneV2.BuildingType.Home ? "Home" : "Office");
-        buildingObject.transform.SetParent(transform);
-        buildingObject.transform.position = center;
+        rawWorldPosition.z = 0f;
+        gridSnappedWorldPosition.z = 0f;
+
+        PedestrianNetworkV2 pedestrianGraph = GetPedestrianNetwork();
+        if (pedestrianGraph == null)
+            return gridSnappedWorldPosition;
+
+        PedestrianNetworkV2.PedestrianNodeDataV2 nearestNode = pedestrianGraph.GetNearestNode(rawWorldPosition, pedestrianPathSnapDistance);
+        if (nearestNode != null)
+            return nearestNode.position;
+
+        if (pedestrianGraph.TryGetNearestWalkableAttachment(rawWorldPosition, pedestrianPathSnapDistance, true, out Vector3 attachmentPoint))
+            return attachmentPoint;
+
+        return gridSnappedWorldPosition;
+    }
+
+    private PedestrianPathV2 CreatePedestrianPath(Vector3 startPosition, Vector3 endPosition)
+    {
+        GameObject pathObject = new GameObject("PedestrianPath");
+        pathObject.transform.SetParent(transform);
+        pathObject.transform.position = Vector3.zero;
+        pathObject.transform.rotation = Quaternion.identity;
 
 #if UNITY_EDITOR
-        Undo.RegisterCreatedObjectUndo(buildingObject, "Create Building");
+        Undo.RegisterCreatedObjectUndo(pathObject, "Create Pedestrian Path");
 #endif
 
-        BuildingZoneV2 building;
+        PedestrianPathV2 path;
 #if UNITY_EDITOR
         if (!Application.isPlaying)
-            building = Undo.AddComponent<BuildingZoneV2>(buildingObject);
+            path = Undo.AddComponent<PedestrianPathV2>(pathObject);
         else
-            building = buildingObject.AddComponent<BuildingZoneV2>();
+            path = pathObject.AddComponent<PedestrianPathV2>();
 #else
-        building = buildingObject.AddComponent<BuildingZoneV2>();
+        path = pathObject.AddComponent<PedestrianPathV2>();
 #endif
 
-        building.Initialize(buildingType, size, 2);
+        if (path == null)
+            return null;
 
-        PedestrianNetworkV2 pedestrianNetwork = FindFirstObjectByType<PedestrianNetworkV2>();
-        if (pedestrianNetwork != null)
-            pedestrianNetwork.RebuildGraph();
+        path.Initialize(startPosition, endPosition);
+
+        PedestrianNetworkV2 pedestrianGraph = GetPedestrianNetwork();
+        if (pedestrianGraph != null)
+            pedestrianGraph.RebuildGraph();
 
 #if UNITY_EDITOR
         if (!Application.isPlaying)
         {
+            EditorUtility.SetDirty(pathObject);
+            EditorUtility.SetDirty(path);
+            EditorSceneManager.MarkSceneDirty(gameObject.scene);
+        }
+#endif
+
+        return path;
+    }
+
+    private PedestrianNetworkV2 GetPedestrianNetwork()
+    {
+        if (pedestrianNetwork == null)
+            pedestrianNetwork = FindFirstObjectByType<PedestrianNetworkV2>();
+
+        return pedestrianNetwork;
+    }
+
+    private void RebuildPedestrianGraphIfPresent()
+    {
+        PedestrianNetworkV2 pedestrianGraph = GetPedestrianNetwork();
+        if (pedestrianGraph != null)
+            pedestrianGraph.RebuildGraph();
+    }
+
+    public void RefreshBuildingPrefabCatalog()
+    {
+#if UNITY_EDITOR
+        residentialPrefabs = LoadBuildingPrefabsFromFolder(residentialPrefabsFolder);
+        officePrefabs = LoadBuildingPrefabsFromFolder(officePrefabsFolder);
+        selectedResidentialPrefabIndex = ClampBuildingPrefabIndex(selectedResidentialPrefabIndex, residentialPrefabs);
+        selectedOfficePrefabIndex = ClampBuildingPrefabIndex(selectedOfficePrefabIndex, officePrefabs);
+#endif
+    }
+
+    public void SelectResidentialPrefab(int index)
+    {
+        selectedResidentialPrefabIndex = ClampBuildingPrefabIndex(index, residentialPrefabs);
+    }
+
+    public void SelectOfficePrefab(int index)
+    {
+        selectedOfficePrefabIndex = ClampBuildingPrefabIndex(index, officePrefabs);
+    }
+
+    public string GetSelectedBuildingPrefabName(BuildingZoneV2.BuildingType buildingType)
+    {
+        BuildingPrefabEntry entry = GetSelectedBuildingPrefabEntry(buildingType);
+        return entry != null ? entry.name : string.Empty;
+    }
+
+    public Vector2 GetSelectedBuildingPrefabSize(BuildingZoneV2.BuildingType buildingType)
+    {
+        GameObject prefab = GetSelectedBuildingPrefab(buildingType);
+        return GetBuildingPrefabSize(prefab);
+    }
+
+    public Vector3 GetSelectedBuildingPrefabCenterOffset(BuildingZoneV2.BuildingType buildingType)
+    {
+        GameObject prefab = GetSelectedBuildingPrefab(buildingType);
+        return GetBuildingPrefabCenterOffset(prefab);
+    }
+
+    public bool TryGetBuildingPlacementPose(
+        BuildingZoneV2.BuildingType buildingType,
+        Vector3 worldPosition,
+        out Vector3 rootPosition,
+        out float rotationDegrees,
+        out Vector2 size,
+        out Vector3 centerOffset)
+    {
+        rootPosition = worldPosition;
+        rotationDegrees = currentBuildingRotationDegrees;
+        size = GetSelectedBuildingPrefabSize(buildingType);
+        centerOffset = GetSelectedBuildingPrefabCenterOffset(buildingType);
+
+        GameObject prefab = GetSelectedBuildingPrefab(buildingType);
+        if (prefab == null)
+            return false;
+
+        Vector3 snappedPosition = GetPreviewWorldPosition(worldPosition);
+        rootPosition = snappedPosition;
+
+        if (TryGetNearestWalkableBuildingPlacement(snappedPosition, out Vector3 attachmentPoint, out Vector3 entranceFacingDirection))
+        {
+            Vector3 localEntrancePosition = GetBuildingPrefabEntranceLocalPosition(prefab);
+            Vector3 localEntranceDirection = GetBuildingPrefabEntranceLocalDirection(prefab, centerOffset);
+
+            float autoRotation = GetRotationFromDirection(localEntranceDirection, entranceFacingDirection);
+            rotationDegrees = autoRotation;
+            Quaternion rotation = Quaternion.Euler(0f, 0f, rotationDegrees);
+            rootPosition = attachmentPoint - rotation * localEntrancePosition;
+            rootPosition.z = 0f;
+            return true;
+        }
+
+        rotationDegrees = currentBuildingRotationDegrees;
+        rootPosition = snappedPosition;
+        return true;
+    }
+
+    public bool IsBuildingPlacementValid(BuildingZoneV2.BuildingType buildingType, Vector3 worldPosition)
+    {
+        if (!TryGetBuildingPlacementPose(
+            buildingType,
+            worldPosition,
+            out Vector3 rootPosition,
+            out float rotationDegrees,
+            out Vector2 size,
+            out Vector3 centerOffset))
+            return false;
+
+        return !DoesBuildingOverlapExisting(rootPosition, rotationDegrees, size, centerOffset, null) &&
+               !DoesBuildingOverlapRoad(rootPosition, rotationDegrees, size, centerOffset) &&
+               !DoesBuildingOverlapWalkableNetwork(rootPosition, rotationDegrees, size, centerOffset);
+    }
+
+    private int ClampBuildingPrefabIndex(int index, List<BuildingPrefabEntry> entries)
+    {
+        if (entries == null || entries.Count == 0)
+            return 0;
+
+        return Mathf.Clamp(index, 0, entries.Count - 1);
+    }
+
+    private BuildingPrefabEntry GetSelectedBuildingPrefabEntry(BuildingZoneV2.BuildingType buildingType)
+    {
+        List<BuildingPrefabEntry> list = buildingType == BuildingZoneV2.BuildingType.Home ? residentialPrefabs : officePrefabs;
+        int index = buildingType == BuildingZoneV2.BuildingType.Home ? selectedResidentialPrefabIndex : selectedOfficePrefabIndex;
+
+        if (list == null || list.Count == 0)
+            return null;
+
+        index = Mathf.Clamp(index, 0, list.Count - 1);
+        return list[index];
+    }
+
+    private GameObject GetSelectedBuildingPrefab(BuildingZoneV2.BuildingType buildingType)
+    {
+        BuildingPrefabEntry entry = GetSelectedBuildingPrefabEntry(buildingType);
+        return entry != null ? entry.prefab : null;
+    }
+
+    private BuildingZoneV2 CreateBuildingFromSelectedPrefab(Vector3 position, BuildingZoneV2.BuildingType buildingType)
+    {
+        GameObject prefab = GetSelectedBuildingPrefab(buildingType);
+        if (prefab == null)
+            return null;
+
+        if (!TryGetBuildingPlacementPose(buildingType, position, out Vector3 rootPosition, out float rotationDegrees, out Vector2 size, out Vector3 _))
+            return null;
+
+        Vector3 centerOffset = GetSelectedBuildingPrefabCenterOffset(buildingType);
+
+        if (DoesBuildingOverlapExisting(rootPosition, rotationDegrees, size, centerOffset, null) ||
+            DoesBuildingOverlapRoad(rootPosition, rotationDegrees, size, centerOffset) ||
+            DoesBuildingOverlapWalkableNetwork(rootPosition, rotationDegrees, size, centerOffset))
+            return null;
+
+        GameObject buildingObject;
+
+#if UNITY_EDITOR
+        if (!Application.isPlaying)
+        {
+            buildingObject = (GameObject)PrefabUtility.InstantiatePrefab(prefab, transform);
+            Undo.RegisterCreatedObjectUndo(buildingObject, "Create Building");
+        }
+        else
+        {
+            buildingObject = Instantiate(prefab, transform);
+        }
+#else
+        buildingObject = Instantiate(prefab, transform);
+#endif
+
+        if (buildingObject == null)
+            return null;
+
+        buildingObject.transform.position = rootPosition;
+        buildingObject.transform.rotation = Quaternion.Euler(0f, 0f, rotationDegrees);
+        buildingObject.name = prefab.name;
+
+        BuildingZoneV2 building = buildingObject.GetComponent<BuildingZoneV2>();
+        if (building == null)
+        {
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+                building = Undo.AddComponent<BuildingZoneV2>(buildingObject);
+            else
+                building = buildingObject.AddComponent<BuildingZoneV2>();
+#else
+                building = buildingObject.AddComponent<BuildingZoneV2>();
+#endif
+        }
+
+        int capacity = Mathf.Max(1, building.Capacity);
+        building.Initialize(buildingType, size, capacity);
+
+        BuildingPseudo3DVisualV2 visualHelper = buildingObject.GetComponent<BuildingPseudo3DVisualV2>();
+        if (visualHelper != null)
+            visualHelper.SyncZoneFromSprite();
+
+        RebuildPedestrianGraphIfPresent();
+
+#if UNITY_EDITOR
+        if (!Application.isPlaying)
+        {
+            EditorUtility.SetDirty(buildingObject);
             EditorUtility.SetDirty(building);
             EditorSceneManager.MarkSceneDirty(gameObject.scene);
         }
 #endif
 
         return building;
+    }
+
+    private bool TryGetNearestWalkableBuildingPlacement(Vector3 worldPosition, out Vector3 attachmentPoint, out Vector3 entranceFacingDirection)
+    {
+        attachmentPoint = worldPosition;
+        entranceFacingDirection = Vector3.down;
+
+        PedestrianNetworkV2 pedestrianGraph = GetPedestrianNetwork();
+        if (pedestrianGraph == null)
+            return false;
+
+        if (!pedestrianGraph.TryGetNearestWalkableAttachment(
+            worldPosition,
+            Mathf.Max(0.1f, buildingSidewalkSnapDistance),
+            true,
+            out Vector3 projectedPoint,
+            out Vector3 walkableDirection))
+            return false;
+
+        Vector3 toBuilding = worldPosition - projectedPoint;
+        toBuilding.z = 0f;
+
+        Vector3 normalA = new Vector3(-walkableDirection.y, walkableDirection.x, 0f);
+        Vector3 normalB = -normalA;
+
+        if (toBuilding.sqrMagnitude < 0.0001f)
+            entranceFacingDirection = -normalA.normalized;
+        else
+            entranceFacingDirection = Vector3.Dot(normalA, toBuilding) >= Vector3.Dot(normalB, toBuilding)
+                ? -normalA.normalized
+                : -normalB.normalized;
+
+        attachmentPoint = projectedPoint - entranceFacingDirection.normalized * Mathf.Max(0.01f, buildingWalkableEdgeOffset);
+        attachmentPoint.z = 0f;
+        return entranceFacingDirection.sqrMagnitude >= 0.0001f;
+    }
+
+    private bool TryGetNearestPointOnPolyline(List<Vector3> polyline, Vector3 point, out Vector3 nearestPoint, out float distance)
+    {
+        nearestPoint = Vector3.zero;
+        distance = float.MaxValue;
+
+        if (polyline == null || polyline.Count < 2)
+            return false;
+
+        bool found = false;
+        for (int i = 0; i < polyline.Count - 1; i++)
+        {
+            Vector3 candidate = ProjectPointOntoSegment(point, polyline[i], polyline[i + 1]);
+            float candidateDistance = Vector3.Distance(point, candidate);
+            if (candidateDistance >= distance)
+                continue;
+
+            distance = candidateDistance;
+            nearestPoint = candidate;
+            found = true;
+        }
+
+        return found;
+    }
+
+    private Vector3 GetBuildingPrefabEntranceLocalPosition(GameObject prefab)
+    {
+        Transform root = prefab != null ? prefab.transform : null;
+        Transform entrance = FindChildRecursive(root, "Entrance");
+        if (entrance == null)
+            return Vector3.zero;
+
+        Vector3 localPosition = root != null
+            ? root.InverseTransformPoint(entrance.position)
+            : entrance.localPosition;
+        localPosition.z = 0f;
+        return localPosition;
+    }
+
+    private Transform FindChildRecursive(Transform root, string childName)
+    {
+        if (root == null || string.IsNullOrWhiteSpace(childName))
+            return null;
+
+        if (root.name == childName)
+            return root;
+
+        for (int i = 0; i < root.childCount; i++)
+        {
+            Transform child = root.GetChild(i);
+            Transform found = FindChildRecursive(child, childName);
+            if (found != null)
+                return found;
+        }
+
+        return null;
+    }
+
+    private Vector3 GetBuildingPrefabEntranceLocalDirection(GameObject prefab, Vector3 centerOffset)
+    {
+        Vector3 localEntrancePosition = GetBuildingPrefabEntranceLocalPosition(prefab);
+        Vector3 localDirection = localEntrancePosition - centerOffset;
+        localDirection.z = 0f;
+
+        if (localDirection.sqrMagnitude < 0.0001f)
+            return Vector3.down;
+
+        return localDirection.normalized;
+    }
+
+    private float GetRotationFromDirection(Vector3 localDirection, Vector3 worldDirection)
+    {
+        localDirection.z = 0f;
+        worldDirection.z = 0f;
+
+        if (localDirection.sqrMagnitude < 0.0001f || worldDirection.sqrMagnitude < 0.0001f)
+            return 0f;
+
+        float localAngle = Mathf.Atan2(localDirection.y, localDirection.x) * Mathf.Rad2Deg;
+        float worldAngle = Mathf.Atan2(worldDirection.y, worldDirection.x) * Mathf.Rad2Deg;
+        return worldAngle - localAngle;
+    }
+
+    private Vector2 GetBuildingPrefabSize(GameObject prefab)
+    {
+        if (prefab == null)
+            return new Vector2(1f, 1f);
+
+        BuildingZoneV2 building = prefab.GetComponent<BuildingZoneV2>();
+        if (building != null)
+            return building.Size;
+
+        SpriteRenderer renderer = GetBuildingPrefabSpriteRenderer(prefab);
+
+        if (renderer != null && renderer.sprite != null)
+        {
+            Vector2 spriteSize = renderer.sprite.bounds.size;
+            Vector3 scale = renderer.transform.localScale;
+            return new Vector2(
+                Mathf.Max(0.5f, Mathf.Abs(spriteSize.x * scale.x)),
+                Mathf.Max(0.5f, Mathf.Abs(spriteSize.y * scale.y)));
+        }
+
+        return new Vector2(1f, 1f);
+    }
+
+    private Vector3 GetBuildingPrefabCenterOffset(GameObject prefab)
+    {
+        SpriteRenderer renderer = GetBuildingPrefabSpriteRenderer(prefab);
+        if (renderer == null || renderer.sprite == null)
+            return Vector3.zero;
+
+        Vector3 offset = renderer.bounds.center - prefab.transform.position;
+        offset.z = 0f;
+        return offset;
+    }
+
+    private SpriteRenderer GetBuildingPrefabSpriteRenderer(GameObject prefab)
+    {
+        if (prefab == null)
+            return null;
+
+        SpriteRenderer renderer = prefab.GetComponent<SpriteRenderer>();
+        if (renderer != null)
+            return renderer;
+
+        Transform baseChild = prefab.transform.Find("Base");
+        if (baseChild != null)
+            return baseChild.GetComponent<SpriteRenderer>();
+
+        return null;
+    }
+
+#if UNITY_EDITOR
+    private List<BuildingPrefabEntry> LoadBuildingPrefabsFromFolder(string folder)
+    {
+        List<BuildingPrefabEntry> result = new List<BuildingPrefabEntry>();
+        if (string.IsNullOrWhiteSpace(folder) || !AssetDatabase.IsValidFolder(folder))
+            return result;
+
+        string[] guids = AssetDatabase.FindAssets("t:Prefab", new[] { folder });
+        for (int i = 0; i < guids.Length; i++)
+        {
+            string path = AssetDatabase.GUIDToAssetPath(guids[i]);
+            GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            if (prefab == null || prefab.GetComponent<BuildingZoneV2>() == null)
+                continue;
+
+            result.Add(new BuildingPrefabEntry
+            {
+                name = prefab.name,
+                prefab = prefab
+            });
+        }
+
+        result.Sort((a, b) => string.Compare(a.name, b.name, System.StringComparison.OrdinalIgnoreCase));
+        return result;
+    }
+#endif
+
+    private bool DoesBuildingOverlapExisting(
+        Vector3 rootPosition,
+        float rotationDegrees,
+        Vector2 size,
+        Vector3 centerOffset,
+        BuildingZoneV2 ignoreBuilding)
+    {
+        BuildingZoneV2[] buildings = FindObjectsByType<BuildingZoneV2>(FindObjectsSortMode.None);
+        if (buildings == null || buildings.Length == 0)
+            return false;
+
+        Vector3[] candidateCorners = GetBuildingFootprintCorners(rootPosition, rotationDegrees, size, centerOffset);
+
+        for (int i = 0; i < buildings.Length; i++)
+        {
+            BuildingZoneV2 building = buildings[i];
+            if (building == null || building == ignoreBuilding)
+                continue;
+
+            Vector3[] existingCorners = GetBuildingFootprintCorners(
+                building.transform.position,
+                building.transform.eulerAngles.z,
+                building.Size,
+                building.CenterOffset);
+
+            if (DoConvexPolygonsOverlap(candidateCorners, existingCorners))
+                return true;
+        }
+
+        return false;
+    }
+
+    private bool DoesBuildingOverlapRoad(Vector3 rootPosition, float rotationDegrees, Vector2 size, Vector3 centerOffset)
+    {
+        if (network == null)
+            return false;
+
+        Vector3[] buildingCorners = GetBuildingFootprintCorners(rootPosition, rotationDegrees, size, centerOffset);
+        IReadOnlyList<RoadSegmentV2> segments = network.Segments;
+
+        for (int i = 0; i < segments.Count; i++)
+        {
+            RoadSegmentV2 segment = segments[i];
+            if (segment == null)
+                continue;
+
+            List<Vector3> centerPolyline = segment.GetCenterPolylineWorld();
+            if (centerPolyline == null || centerPolyline.Count < 2)
+                continue;
+
+            float halfRoadWidth = Mathf.Max(0.05f, segment.TotalRoadWidth * 0.5f);
+
+            for (int j = 0; j < centerPolyline.Count - 1; j++)
+            {
+                if (!TryBuildExpandedSegmentQuad(centerPolyline[j], centerPolyline[j + 1], halfRoadWidth, out Vector3[] roadQuad))
+                    continue;
+
+                if (DoConvexPolygonsOverlap(buildingCorners, roadQuad))
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool DoesBuildingOverlapWalkableNetwork(Vector3 rootPosition, float rotationDegrees, Vector2 size, Vector3 centerOffset)
+    {
+        Vector3[] buildingCorners = GetBuildingFootprintCorners(rootPosition, rotationDegrees, size, centerOffset);
+
+        if (network != null)
+        {
+            IReadOnlyList<RoadSegmentV2> segments = network.Segments;
+            for (int i = 0; i < segments.Count; i++)
+            {
+                RoadSegmentV2 segment = segments[i];
+                if (segment == null)
+                    continue;
+
+                if (DoesPolylineIntersectPolygon(segment.GetLeftSidewalkPolylineWorld(), buildingCorners))
+                    return true;
+
+                if (DoesPolylineIntersectPolygon(segment.GetRightSidewalkPolylineWorld(), buildingCorners))
+                    return true;
+            }
+        }
+
+        PedestrianPathV2[] pedestrianPaths = FindObjectsByType<PedestrianPathV2>(FindObjectsSortMode.None);
+        for (int i = 0; i < pedestrianPaths.Length; i++)
+        {
+            PedestrianPathV2 path = pedestrianPaths[i];
+            if (path == null)
+                continue;
+
+            if (DoesPolylineIntersectPolygon(path.GetPolylineWorld(), buildingCorners))
+                return true;
+        }
+
+        return false;
+    }
+
+    private bool DoesPedestrianPathIntersectBuildings(Vector3 startPosition, Vector3 endPosition)
+    {
+        BuildingZoneV2[] buildings = FindObjectsByType<BuildingZoneV2>(FindObjectsSortMode.None);
+        if (buildings == null || buildings.Length == 0)
+            return false;
+
+        for (int i = 0; i < buildings.Length; i++)
+        {
+            BuildingZoneV2 building = buildings[i];
+            if (building == null)
+                continue;
+
+            Vector3[] corners = GetBuildingFootprintCorners(
+                building.transform.position,
+                building.transform.eulerAngles.z,
+                building.Size,
+                building.CenterOffset);
+
+            if (DoesSegmentIntersectPolygon(startPosition, endPosition, corners))
+                return true;
+        }
+
+        return false;
+    }
+
+    private bool DoesPolylineIntersectPolygon(List<Vector3> polyline, Vector3[] polygon)
+    {
+        if (polyline == null || polyline.Count < 2 || polygon == null || polygon.Length < 3)
+            return false;
+
+        for (int i = 0; i < polyline.Count - 1; i++)
+        {
+            if (DoesSegmentIntersectPolygon(polyline[i], polyline[i + 1], polygon))
+                return true;
+        }
+
+        return false;
+    }
+
+    private Vector3[] GetBuildingFootprintCorners(Vector3 rootPosition, float rotationDegrees, Vector2 size, Vector3 centerOffset)
+    {
+        Quaternion rotation = Quaternion.Euler(0f, 0f, rotationDegrees);
+        Vector3 center = rootPosition + rotation * centerOffset;
+        Vector3 half = new Vector3(size.x * 0.5f, size.y * 0.5f, 0f);
+
+        return new[]
+        {
+            center + rotation * new Vector3(-half.x, -half.y, 0f),
+            center + rotation * new Vector3(half.x, -half.y, 0f),
+            center + rotation * new Vector3(half.x, half.y, 0f),
+            center + rotation * new Vector3(-half.x, half.y, 0f)
+        };
+    }
+
+    private bool TryBuildExpandedSegmentQuad(Vector3 start, Vector3 end, float halfWidth, out Vector3[] quad)
+    {
+        quad = null;
+
+        Vector3 direction = end - start;
+        direction.z = 0f;
+        if (direction.sqrMagnitude < 0.0001f)
+            return false;
+
+        direction.Normalize();
+        Vector3 normal = new Vector3(-direction.y, direction.x, 0f) * Mathf.Max(0.01f, halfWidth);
+
+        quad = new[]
+        {
+            start - normal,
+            end - normal,
+            end + normal,
+            start + normal
+        };
+        return true;
+    }
+
+    private bool DoConvexPolygonsOverlap(Vector3[] a, Vector3[] b)
+    {
+        return !HasSeparatingAxis(a, b) && !HasSeparatingAxis(b, a);
+    }
+
+    private bool DoesSegmentIntersectPolygon(Vector3 start, Vector3 end, Vector3[] polygon)
+    {
+        if (polygon == null || polygon.Length < 3)
+            return false;
+
+        if (IsPointInsideConvexPolygon(start, polygon) || IsPointInsideConvexPolygon(end, polygon))
+            return true;
+
+        for (int i = 0; i < polygon.Length; i++)
+        {
+            Vector3 a = polygon[i];
+            Vector3 b = polygon[(i + 1) % polygon.Length];
+            if (DoSegmentsIntersect(start, end, a, b))
+                return true;
+        }
+
+        return false;
+    }
+
+    private bool IsPointInsideConvexPolygon(Vector3 point, Vector3[] polygon)
+    {
+        bool hasPositive = false;
+        bool hasNegative = false;
+
+        for (int i = 0; i < polygon.Length; i++)
+        {
+            Vector3 a = polygon[i];
+            Vector3 b = polygon[(i + 1) % polygon.Length];
+            float cross = Cross2D(b - a, point - a);
+
+            if (cross > 0.0001f)
+                hasPositive = true;
+            else if (cross < -0.0001f)
+                hasNegative = true;
+
+            if (hasPositive && hasNegative)
+                return false;
+        }
+
+        return true;
+    }
+
+    private bool DoSegmentsIntersect(Vector3 a1, Vector3 a2, Vector3 b1, Vector3 b2)
+    {
+        float d1 = Cross2D(a2 - a1, b1 - a1);
+        float d2 = Cross2D(a2 - a1, b2 - a1);
+        float d3 = Cross2D(b2 - b1, a1 - b1);
+        float d4 = Cross2D(b2 - b1, a2 - b1);
+
+        if (((d1 > 0f && d2 < 0f) || (d1 < 0f && d2 > 0f)) &&
+            ((d3 > 0f && d4 < 0f) || (d3 < 0f && d4 > 0f)))
+            return true;
+
+        if (Mathf.Abs(d1) <= 0.0001f && IsPointOnSegment(b1, a1, a2))
+            return true;
+
+        if (Mathf.Abs(d2) <= 0.0001f && IsPointOnSegment(b2, a1, a2))
+            return true;
+
+        if (Mathf.Abs(d3) <= 0.0001f && IsPointOnSegment(a1, b1, b2))
+            return true;
+
+        if (Mathf.Abs(d4) <= 0.0001f && IsPointOnSegment(a2, b1, b2))
+            return true;
+
+        return false;
+    }
+
+    private bool IsPointOnSegment(Vector3 point, Vector3 segmentStart, Vector3 segmentEnd)
+    {
+        return point.x >= Mathf.Min(segmentStart.x, segmentEnd.x) - 0.0001f &&
+               point.x <= Mathf.Max(segmentStart.x, segmentEnd.x) + 0.0001f &&
+               point.y >= Mathf.Min(segmentStart.y, segmentEnd.y) - 0.0001f &&
+               point.y <= Mathf.Max(segmentStart.y, segmentEnd.y) + 0.0001f;
+    }
+
+    private float Cross2D(Vector3 a, Vector3 b)
+    {
+        return a.x * b.y - a.y * b.x;
+    }
+
+    private bool HasSeparatingAxis(Vector3[] source, Vector3[] target)
+    {
+        for (int i = 0; i < source.Length; i++)
+        {
+            Vector3 p0 = source[i];
+            Vector3 p1 = source[(i + 1) % source.Length];
+            Vector3 edge = p1 - p0;
+            Vector3 axis = new Vector3(-edge.y, edge.x, 0f);
+
+            if (axis.sqrMagnitude < 0.0001f)
+                continue;
+
+            axis.Normalize();
+
+            ProjectPolygonToAxis(source, axis, out float sourceMin, out float sourceMax);
+            ProjectPolygonToAxis(target, axis, out float targetMin, out float targetMax);
+
+            if (sourceMax < targetMin || targetMax < sourceMin)
+                return true;
+        }
+
+        return false;
+    }
+
+    private void ProjectPolygonToAxis(Vector3[] polygon, Vector3 axis, out float min, out float max)
+    {
+        min = float.MaxValue;
+        max = float.MinValue;
+
+        for (int i = 0; i < polygon.Length; i++)
+        {
+            float projection = Vector3.Dot(polygon[i], axis);
+            if (projection < min)
+                min = projection;
+
+            if (projection > max)
+                max = projection;
+        }
     }
 
     private float DistancePointToBuilding(Vector3 worldPosition, BuildingZoneV2 building)
@@ -1670,6 +2584,26 @@ private RoadLaneDataV2 FindNearestOutgoingLane(RoadNodeV2 node, Vector3 worldPos
         Vector3 projected = a + ab * t;
         projected.z = 0f;
         return projected;
+    }
+
+    private float DistancePointToPolyline(Vector3 point, List<Vector3> polyline)
+    {
+        if (polyline == null || polyline.Count == 0)
+            return float.MaxValue;
+
+        if (polyline.Count == 1)
+            return Vector3.Distance(point, polyline[0]);
+
+        float bestDistance = float.MaxValue;
+        for (int i = 0; i < polyline.Count - 1; i++)
+        {
+            Vector3 projected = ProjectPointOntoSegment(point, polyline[i], polyline[i + 1]);
+            float distance = Vector3.Distance(point, projected);
+            if (distance < bestDistance)
+                bestDistance = distance;
+        }
+
+        return bestDistance;
     }
 }
 
